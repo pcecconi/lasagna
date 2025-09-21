@@ -4,39 +4,28 @@
 #| O que decide se é Driver ou Worker      |
 #| é o comando de inicialização no compose |
 #+-----------------------------------------+
-
 FROM ubuntu:22.04
 
 SHELL ["/bin/bash", "-c"]
 
-RUN apt-get update --fix-missing
+RUN apt-get update --fix-missing && \
+    apt-get install curl -y && \
+    apt-get install openjdk-18-jdk -y && \
+    java -version
 
-#+-----------------+
-#| Instalando cURL |
-#+-----------------+
-
-RUN apt-get install curl -y
-
-#+--------------------+
-#| Instalando Java 11 |
-#+--------------------+
-
-RUN apt-get install openjdk-18-jdk -y                                           && \
-    echo "export JAVA_HOME=/usr/lib/jvm/java-18-openjdk-amd64" >> ~/.bashrc     && \
-    echo "export PATH=\$JAVA_HOME/bin:\$PATH" >> ~/.bashrc
-
-ENV JAVA_HOME /usr/lib/jvm/java-18-openjdk-amd64
+# The environment variables are already correct, but we'll re-verify them
+ENV JAVA_HOME /usr/lib/jvm/java-18-openjdk-arm64
 ENV PATH "${JAVA_HOME}/bin:$PATH"
 
  #+------------------------+
  #| Instalando Spark 3.3.2 |
  #+------------------------+
 
-RUN curl -O https://dlcdn.apache.org/spark/spark-3.5.3/spark-3.5.3-bin-hadoop3.tgz &&\
-    tar zxvf spark-3.5.3-bin-hadoop3.tgz -C /usr/local &&\
-    rm spark-3.5.3-bin-hadoop3.tgz &&\
+RUN curl -O https://dlcdn.apache.org/spark/spark-3.5.6/spark-3.5.6-bin-hadoop3.tgz &&\
+    tar zxvf spark-3.5.6-bin-hadoop3.tgz -C /usr/local &&\
+    rm spark-3.5.6-bin-hadoop3.tgz &&\
     cd /usr/local &&\
-    ln -sT spark-3.5.3-bin-hadoop3 spark
+    ln -sT spark-3.5.6-bin-hadoop3 spark
 
 RUN echo "export SPARK_HOME=/usr/local/spark" >> ~/.bashrc
 RUN echo "export PATH=\$SPARK_HOME/bin:\$PATH" >> ~/.bashrc
