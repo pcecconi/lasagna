@@ -2,6 +2,11 @@ FROM trinodb/trino
 
 USER root
 
+# Copy optimized configuration files
+COPY ./conf/config.properties /etc/trino/
+COPY ./conf/jvm.config /etc/trino/
+
+# Copy catalog configurations
 COPY ./conf/hive.properties etc/trino/catalog/
 COPY ./conf/delta.properties etc/trino/catalog/
 COPY ./conf/iceberg.properties etc/trino/catalog/
