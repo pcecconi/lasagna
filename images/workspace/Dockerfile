@@ -28,7 +28,7 @@ RUN pip install jupyterlab
 #| Installing PySpark |
 #+--------------------+
 
-RUN pip install pyspark==3.5.6
+RUN pip install pyspark==3.4.3
 
 ENV SPARK_HOME=/usr/local/lib/python3.10/dist-packages/pyspark
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# LASAGNA Big Data Stack - Auto Memory Optimization Setup Script
-# This script automatically detects available Docker memory and optimizes all configurations
+# LASAGNA Big Data Stack - Stable Configuration Setup Script
+# This script automatically detects available Docker memory and configures stable settings
 # Author: LASAGNA Team
-# Version: 1.0
+# Version: 2.0 - Focused on stability over aggressive optimization
 
 set -e
 
@@ -431,15 +431,7 @@ spark.sql.files.ignoreMissingFiles                             true
 spark.master                                                   spark://spark-master:7077
 spark.executor.instances                                       1
 
-# Memory optimizations for MINIMAL setup (${available_memory}MB)
-spark.driver.memory                                            128m
-spark.driver.maxResultSize                                     64m
-spark.executor.memory                                          128m
-spark.executor.memoryFraction                                   0.4
-spark.executor.cores                                            1
-spark.sql.adaptive.enabled                                     true
-spark.sql.adaptive.coalescePartitions.enabled                 true
-spark.sql.adaptive.skewJoin.enabled                            true
+# Using Spark defaults for stability - no aggressive memory optimizations
 EOF
             ;;
         "SMALL")
@@ -490,15 +482,7 @@ spark.sql.files.ignoreMissingFiles                             true
 spark.master                                                   spark://spark-master:7077
 spark.executor.instances                                       2
 
-# Memory optimizations for SMALL setup (${available_memory}MB)
-spark.driver.memory                                            256m
-spark.driver.maxResultSize                                     128m
-spark.executor.memory                                          256m
-spark.executor.memoryFraction                                   0.5
-spark.executor.cores                                            1
-spark.sql.adaptive.enabled                                     true
-spark.sql.adaptive.coalescePartitions.enabled                 true
-spark.sql.adaptive.skewJoin.enabled                            true
+# Using Spark defaults for stability - no aggressive memory optimizations
 EOF
             ;;
         "MEDIUM")
@@ -549,15 +533,7 @@ spark.sql.files.ignoreMissingFiles                             true
 spark.master                                                   spark://spark-master:7077
 spark.executor.instances                                       2
 
-# Memory optimizations for MEDIUM setup (${available_memory}MB)
-spark.driver.memory                                            1g
-spark.driver.maxResultSize                                     512m
-spark.executor.memory                                          1g
-spark.executor.memoryFraction                                   0.6
-spark.executor.cores                                            2
-spark.sql.adaptive.enabled                                     true
-spark.sql.adaptive.coalescePartitions.enabled                 true
-spark.sql.adaptive.skewJoin.enabled                            true
+# Using Spark defaults for stability - no aggressive memory optimizations
 EOF
             ;;
         "LARGE"|"XLARGE"|"HUGE")
@@ -608,15 +584,7 @@ spark.sql.files.ignoreMissingFiles                             true
 spark.master                                                   spark://spark-master:7077
 spark.executor.instances                                       4
 
-# Memory optimizations for ${tier} setup (${available_memory}MB)
-spark.driver.memory                                            2g
-spark.driver.maxResultSize                                     1g
-spark.executor.memory                                          2g
-spark.executor.memoryFraction                                   0.7
-spark.executor.cores                                            4
-spark.sql.adaptive.enabled                                     true
-spark.sql.adaptive.coalescePartitions.enabled                 true
-spark.sql.adaptive.skewJoin.enabled                            true
+# Using Spark defaults for stability - no aggressive memory optimizations
 EOF
             ;;
     esac
@@ -698,23 +666,19 @@ display_config_summary() {
     echo -e "${CYAN}Spark Configuration:${NC}"
     case $tier in
         "MINIMAL")
-            echo "  - Driver Memory: 128MB"
-            echo "  - Executor Memory: 128MB"
+            echo "  - Using Spark defaults for stability"
             echo "  - Executor Instances: 1"
             ;;
         "SMALL")
-            echo "  - Driver Memory: 256MB"
-            echo "  - Executor Memory: 256MB"
+            echo "  - Using Spark defaults for stability"
             echo "  - Executor Instances: 2"
             ;;
         "MEDIUM")
-            echo "  - Driver Memory: 1GB"
-            echo "  - Executor Memory: 1GB"
+            echo "  - Using Spark defaults for stability"
             echo "  - Executor Instances: 2"
             ;;
         "LARGE"|"XLARGE"|"HUGE")
-            echo "  - Driver Memory: 2GB"
-            echo "  - Executor Memory: 2GB"
+            echo "  - Using Spark defaults for stability"
             echo "  - Executor Instances: 4"
             ;;
     esac
@@ -807,7 +771,7 @@ main() {
         esac
     done
     
-    print_header "LASAGNA Big Data Stack - Auto Memory Optimization"
+    print_header "LASAGNA Big Data Stack - Stable Configuration Setup"
     
     # Detect or use override memory
     if [ -n "$override_memory" ]; then
