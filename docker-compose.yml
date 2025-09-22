@@ -67,6 +67,12 @@ services:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=password
       - SPARK_LOCAL_IP=spark-worker-a
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
     command: usr/local/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --webui-port 5051 spark://spark-master:7077
   spark-worker-b:
     container_name: spark-worker-b
@@ -81,6 +87,12 @@ services:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=password
       - SPARK_LOCAL_IP=spark-worker-b
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
     command: usr/local/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --webui-port 5052 spark://spark-master:7077
   workspace:
     container_name: workspace
@@ -97,6 +109,12 @@ services:
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=password
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
     command: jupyter lab --port 8888 --LabApp.token=''
   trino:
     container_name: trino
