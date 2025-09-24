@@ -33,6 +33,29 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to run test with better error reporting
+run_test() {
+    local test_name="$1"
+    local test_command="$2"
+    
+    print_status "Running: $test_name"
+    echo "----------------------------------------"
+    
+    if eval "$test_command"; then
+        print_success "$test_name completed successfully"
+        return 0
+    else
+        print_error "$test_name failed"
+        echo ""
+        print_status "Debugging information:"
+        print_status "- Check if all containers are running: docker ps"
+        print_status "- Check container logs: docker logs workspace"
+        print_status "- Check Spark master logs: docker logs spark-master"
+        print_status "- Check Spark worker logs: docker logs spark-worker-a"
+        return 1
+    fi
+}
+
 # Function to check if container is running
 check_container() {
     local container_name=$1
@@ -73,25 +96,31 @@ print_success "All containers are running!"
 print_status "Waiting for services to be ready..."
 sleep 15
 
+# Debug: Show container status and basic connectivity
+print_status "Debug: Checking basic connectivity..."
+echo "----------------------------------------"
+print_status "Container status:"
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+echo ""
+print_status "Testing basic Python connectivity in workspace container..."
+docker exec workspace python3 -c "print('✅ Python is working in workspace container')" || print_warning "Python test failed"
+echo ""
+
 echo ""
 print_status "Testing Spark 3.4.3 Basic Functionality..."
 echo "================================================"
 
 # Test 1: Basic Spark version check
-print_status "Test 1: Verifying Spark version..."
-if docker exec workspace python3 -c "
+if ! run_test "Spark Version Check" "docker exec workspace python3 -c \"
 import pyspark
 print(f'✅ PySpark version: {pyspark.__version__}')
 
 from pyspark.sql import SparkSession
 spark = SparkSession.builder.appName('Spark-3.4-Test').getOrCreate()
 print(f'✅ Spark cluster version: {spark.version}')
-print(f'✅ Spark master: {spark.conf.get(\"spark.master\")}')
+print(f'✅ Spark master: {spark.conf.get(\\\"spark.master\\\")}')
 spark.stop()
-" >/dev/null 2>&1; then
-    print_success "Spark 3.4.3 is working correctly"
-else
-    print_error "Spark version test failed"
+\""; then
     exit 1
 fi
 
@@ -169,10 +198,10 @@ count = spark.sql('SELECT COUNT(*) as total FROM test_delta_table').collect()[0]
 print(f'✅ Delta table has {count} records')
 
 spark.stop()
-" >/dev/null 2>&1; then
+"; then
     print_success "Delta Lake 2.4.0 is working perfectly with Spark 3.4.3"
 else
-    print_error "Delta Lake test failed"
+    print_error "Delta Lake test failed - check the output above for details"
     exit 1
 fi
 
@@ -222,10 +251,10 @@ count = spark.sql('SELECT COUNT(*) as total FROM iceberg.test.employees_iceberg'
 print(f'✅ Iceberg table has {count} records')
 
 spark.stop()
-" >/dev/null 2>&1; then
+"; then
     print_success "Apache Iceberg 1.4.2 is working perfectly with Spark 3.4.3"
 else
-    print_error "Apache Iceberg test failed"
+    print_error "Apache Iceberg test failed - check the output above for details"
     exit 1
 fi
 
@@ -270,10 +299,10 @@ count = spark.sql('SELECT COUNT(*) as total FROM test_hive_table').collect()[0][
 print(f'✅ Hive table has {count} records')
 
 spark.stop()
-" >/dev/null 2>&1; then
+"; then
     print_success "Hive Metastore integration is working correctly"
 else
-    print_error "Hive Metastore test failed"
+    print_error "Hive Metastore test failed - check the output above for details"
     exit 1
 fi
 
@@ -304,10 +333,10 @@ print(f'✅ Trino query result: {result[0]}')
 
 cur.close()
 conn.close()
-" >/dev/null 2>&1; then
+"; then
     print_success "Trino is working correctly"
 else
-    print_error "Trino test failed"
+    print_error "Trino test failed - check the output above for details"
     exit 1
 fi
 
@@ -341,10 +370,10 @@ try:
 except ClientError as e:
     print(f'❌ S3 test failed: {e}')
     exit(1)
-" >/dev/null 2>&1; then
+"; then
     print_success "MinIO S3 is working correctly"
 else
-    print_error "MinIO S3 test failed"
+    print_error "MinIO S3 test failed - check the output above for details"
     exit 1
 fi
 
