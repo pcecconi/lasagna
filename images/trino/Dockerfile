@@ -14,4 +14,4 @@ COPY ./conf/iceberg.properties etc/trino/catalog/
 RUN mkdir /etc/hadoop
 RUN mkdir /etc/hadoop/conf
 
-COPY  /conf/metastore-site.xml /etc/hadoop/conf/
+COPY ./conf/metastore-site.xml /etc/hadoop/conf/
