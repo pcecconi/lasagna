@@ -1,5 +1,5 @@
 ![alt text](docs/pastabricks-2.png "Lasagna")
-Lasagna (or _pastabricks_) is a interactive development environment I built to learn and practice PySpark.
+Lasagna (or _pastabricks_) is a interactive development environment built by [Gabriel Marques](https://github.com/gmrqs) originally [here](https://github.com/gmrqs/lasagna) to learn and practice PySpark.
 
 It's built using Docker Compose template, provisioning a Jupyter Lab, a two-workers Spark Standalone Cluster, MinIO Object Storage, a Hive Standalone Metastore, Trino and a Kafka cluster for simulating events. 
 
