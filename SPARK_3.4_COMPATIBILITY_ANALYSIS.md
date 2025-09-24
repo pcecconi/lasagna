@@ -156,3 +156,4 @@ If issues arise:
 ---
 
 **Conclusion**: The downgrade to Spark 3.4.x is **RECOMMENDED** and **LOW RISK** with significant benefits for Delta Lake functionality.
+
