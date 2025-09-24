@@ -10,13 +10,6 @@ def SparkSession(line):
 spark = SparkSession\\
     .builder\\
     .appName("SparkSession-Hive")\\
-    .config("spark.driver.memory", "2g")\\
-    .config("spark.driver.maxResultSize", "1g")\\
-    .config("spark.executor.memory", "512m")\\
-    .config("spark.executor.cores", "2")\\
-    .config("spark.dynamicAllocation.enabled", "true")\\
-    .config("spark.dynamicAllocation.maxExecutors", "4")\\
-    .config("spark.sql.adaptive.enabled", "true")\\
     .getOrCreate()
 
 spark"""
@@ -29,13 +22,6 @@ spark = SparkSession \\
     .config("spark.jars.packages", "io.delta:delta-core_2.12:2.4.0") \\
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \\
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \\
-    .config("spark.driver.memory", "2g") \\
-    .config("spark.driver.maxResultSize", "1g") \\
-    .config("spark.executor.memory", "512m") \\
-    .config("spark.executor.cores", "2") \\
-    .config("spark.dynamicAllocation.enabled", "true") \\
-    .config("spark.dynamicAllocation.maxExecutors", "4") \\
-    .config("spark.sql.adaptive.enabled", "true") \\
     .enableHiveSupport() \\
     .getOrCreate()
 
@@ -51,13 +37,6 @@ spark = SparkSession \\
     .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog") \\
     .config("spark.sql.catalog.iceberg.type", "hive") \\
     .config("spark.sql.catalog.iceberg.uri", "thrift://hive-metastore:9083") \\
-    .config("spark.driver.memory", "2g") \\
-    .config("spark.driver.maxResultSize", "1g") \\
-    .config("spark.executor.memory", "512m") \\
-    .config("spark.executor.cores", "2") \\
-    .config("spark.dynamicAllocation.enabled", "true") \\
-    .config("spark.dynamicAllocation.maxExecutors", "4") \\
-    .config("spark.sql.adaptive.enabled", "true") \\
     .getOrCreate()
 
 spark""" 
