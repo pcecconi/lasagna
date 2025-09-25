@@ -1,5 +1,5 @@
 #+-----------------------------------------+
-#|           Imagem Spark 3.4.3            | 
+#|           Imagem Spark 3.5.3            | 
 #|                                         |
 #| O que decide se é Driver ou Worker      |
 #| é o comando de inicialização no compose |
@@ -10,22 +10,22 @@ SHELL ["/bin/bash", "-c"]
 
 RUN apt-get update --fix-missing && \
     apt-get install curl -y && \
-    apt-get install openjdk-18-jdk -y && \
+    apt-get install openjdk-17-jdk -y && \
     java -version
 
 # The environment variables are already correct, but we'll re-verify them
-ENV JAVA_HOME /usr/lib/jvm/java-18-openjdk-arm64
+ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk-arm64
 ENV PATH "${JAVA_HOME}/bin:$PATH"
 
- #+------------------------+
- #| Instalando Spark 3.4.3 |
- #+------------------------+
+#+------------------------+
+#| Instalando Spark 3.5.3 |
+#+------------------------+
 
-RUN curl -O https://archive.apache.org/dist/spark/spark-3.4.3/spark-3.4.3-bin-hadoop3.tgz &&\
-    tar zxvf spark-3.4.3-bin-hadoop3.tgz -C /usr/local &&\
-    rm spark-3.4.3-bin-hadoop3.tgz &&\
+RUN curl -O https://archive.apache.org/dist/spark/spark-3.5.3/spark-3.5.3-bin-hadoop3.tgz &&\
+    tar zxvf spark-3.5.3-bin-hadoop3.tgz -C /usr/local &&\
+    rm spark-3.5.3-bin-hadoop3.tgz &&\
     cd /usr/local &&\
-    ln -sT spark-3.4.3-bin-hadoop3 spark
+    ln -sT spark-3.5.3-bin-hadoop3 spark
 
 RUN echo "export SPARK_HOME=/usr/local/spark" >> ~/.bashrc
 RUN echo "export PATH=\$SPARK_HOME/bin:\$PATH" >> ~/.bashrc
@@ -40,7 +40,7 @@ ENV PATH "${SPARK_HOME}/bin:$PATH"
 RUN curl https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
     --output ${SPARK_HOME}/jars/hadoop-aws-3.3.4.jar
 
-RUN curl https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+RUN curl https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
     --output ${SPARK_HOME}/jars/aws-java-sdk-bundle-1.12.262.jar
 
 RUN curl https://jdbc.postgresql.org/download/postgresql-42.5.0.jar \
