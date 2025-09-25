@@ -19,8 +19,8 @@ ENV HIVE_HOME=/opt/apache-hive-metastore-3.0.0-bin
 RUN curl https://archive.apache.org/dist/hive/hive-standalone-metastore-3.0.0/hive-standalone-metastore-3.0.0-bin.tar.gz | tar xfz -
 RUN rm -rf /opt/hive-standalone-metastore-3.0.0-bin.tar.gz
 
-# Instalar Hadoop Common https://archive.apache.org/dist/hadoop/common/
-RUN curl https://archive.apache.org/dist/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz | tar zxf -
+# Instalar Hadoop Common https://apache.root.lu/hadoop/common/hadoop-3.3.4/
+RUN curl https://apache.root.lu/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz | tar zxf -
 RUN rm -rf /opt/hadoop-3.3.4.tar.gz
 
 # Instalar conector JDBC Postgres
