@@ -28,12 +28,9 @@ CONFIG_DIR="$SCRIPT_DIR/images"
 
 # Memory tiers (in MB)
 MEMORY_TIERS=(
-    "2048:MINIMAL"      # 2GB - Minimal setup
     "4096:SMALL"        # 4GB - Small setup  
     "8192:MEDIUM"       # 8GB - Medium setup
-    "16384:LARGE"       # 16GB - Large setup
-    "32768:XLARGE"      # 32GB - Extra large setup
-    "65536:HUGE"        # 64GB+ - Huge setup
+    "16384:LARGE"       # 16GB+ - Large setup
 )
 
 # Configuration templates will be generated dynamically
@@ -139,18 +136,18 @@ generate_trino_config() {
     backup_config_file "$CONFIG_DIR/trino/conf/jvm.config"
     
     case $tier in
-        "MINIMAL")
+        "SMALL")
             cat > "$CONFIG_DIR/trino/conf/config.properties" << EOF
-# Optimized Trino configuration for MINIMAL setup (${available_memory}MB)
+# Optimized Trino configuration for SMALL setup (${available_memory}MB)
 coordinator=true
 node-scheduler.include-coordinator=true
 http-server.http.port=8080
 discovery.uri=http://localhost:8080
 
 # Memory optimizations for limited RAM
-query.max-memory=128MB
-query.max-memory-per-node=64MB
-query.max-total-memory=128MB
+query.max-memory=512MB
+query.max-memory-per-node=256MB
+query.max-total-memory=512MB
 
 # Reduce parallelism to save memory
 task.concurrency=1
@@ -172,9 +169,9 @@ EOF
 -server
 -agentpath:/usr/lib/trino/bin/libjvmkill.so
 
-# Minimal memory settings for ${available_memory}MB system
--Xmx256m
--Xms128m
+# Memory settings for 2GB Docker limit
+-Xmx2048m
+-Xms1024m
 
 # G1GC settings optimized for very small heap
 -XX:+UseG1GC
@@ -197,70 +194,6 @@ EOF
 # System settings
 -Djdk.attach.allowAttachSelf=true
 -Djdk.nio.maxCachedBufferSize=250000
--Dfile.encoding=UTF-8
-
-# Allow loading dynamic agent used by JOL
--XX:+EnableDynamicAgentLoading
-EOF
-            ;;
-        "SMALL")
-            cat > "$CONFIG_DIR/trino/conf/config.properties" << EOF
-# Optimized Trino configuration for SMALL setup (${available_memory}MB)
-coordinator=true
-node-scheduler.include-coordinator=true
-http-server.http.port=8080
-discovery.uri=http://localhost:8080
-
-# Memory optimizations for limited RAM
-query.max-memory=256MB
-query.max-memory-per-node=128MB
-query.max-total-memory=256MB
-
-# Reduce parallelism to save memory
-task.concurrency=2
-task.max-worker-threads=4
-
-# Optimize for small datasets
-query.max-execution-time=10m
-query.max-planning-time=5m
-
-# Reduce buffer sizes
-exchange.max-buffer-size=32MB
-exchange.client-threads=4
-
-# Catalog management
-catalog.management=\${ENV:CATALOG_MANAGEMENT}
-EOF
-
-            cat > "$CONFIG_DIR/trino/conf/jvm.config" << EOF
--server
--agentpath:/usr/lib/trino/bin/libjvmkill.so
-
-# Small memory settings for ${available_memory}MB system
--Xmx512m
--Xms256m
-
-# G1GC settings optimized for small heap
--XX:+UseG1GC
--XX:G1HeapRegionSize=8M
--XX:MaxGCPauseMillis=100
-
-# Memory management
--XX:+ExplicitGCInvokesConcurrent
--XX:+HeapDumpOnOutOfMemoryError
--XX:+ExitOnOutOfMemoryError
--XX:-OmitStackTraceInFastThrow
-
-# Minimal code cache
--XX:ReservedCodeCacheSize=64M
-
-# Compilation optimizations
--XX:PerMethodRecompilationCutoff=10000
--XX:PerBytecodeRecompilationCutoff=10000
-
-# System settings
--Djdk.attach.allowAttachSelf=true
--Djdk.nio.maxCachedBufferSize=500000
 -Dfile.encoding=UTF-8
 
 # Allow loading dynamic agent used by JOL
@@ -331,7 +264,7 @@ EOF
 -XX:+EnableDynamicAgentLoading
 EOF
             ;;
-        "LARGE"|"XLARGE"|"HUGE")
+        "LARGE")
             cat > "$CONFIG_DIR/trino/conf/config.properties" << EOF
 # Optimized Trino configuration for ${tier} setup (${available_memory}MB)
 coordinator=true
@@ -407,57 +340,6 @@ generate_spark_config() {
     backup_config_file "$CONFIG_DIR/workspace/conf/spark-defaults.conf"
     
     case $tier in
-        "MINIMAL")
-            cat > "$CONFIG_DIR/workspace/conf/spark-defaults.conf" << EOF
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# Configurações relativas ao MinIO e S3
-spark.hadoop.fs.s3a.endpoint                                   http://minio:9000
-spark.hadoop.fs.s3a.access.key                                 admin
-spark.hadoop.fs.s3a.secret.key                                 password
-spark.hadoop.fs.s3a.fast.upload                                true
-spark.hadoop.fs.s3a.path.style.access                          true
-spark.hadoop.fs.s3a.impl                                       org.apache.hadoop.fs.s3a.S3AFileSystem
-
-# Configurações relativas ao Hive Metastore
-spark.hadoop.javax.jdo.option.ConnectionDriverName             org.postgresql.Driver
-spark.hadoop.javax.jdo.option.ConnectionURL                    jdbc:postgresql://postgres:5432/metastore_db
-spark.hadoop.javax.jdo.option.ConnectionUserName               hive
-spark.hadoop.javax.jdo.option.ConnectionPassword               hive123
-
-spark.hadoop.datanucleus.schema.autoCreateAll                  true
-spark.hadoop.datanucleus.schema.autoCreateTables               true
-spark.hadoop.datanucleus.fixedDatastore                        false
-spark.hadoop.hive.metastore.schema.verification                false
-spark.hadoop.hive.metastore.schema.verification.record.version false
-
-spark.sql.warehouse.dir                                        s3a://warehouse/
-spark.sql.catalogImplementation                                hive
-spark.sql.hive.metastore.version                               3.0.0
-spark.sql.hive.metastore.uris                                  thrift://hive-metastore:9083
-spark.sql.hive.metastore.jars                                  /usr/local/lib/python3.10/dist-packages/pyspark/hms-3.0.0/jars/*
-spark.sql.files.ignoreMissingFiles                             true
-
-# Configurando Cluster
-spark.master                                                   spark://spark-master:7077
-spark.executor.instances                                       1
-
-# Using Spark defaults for stability - no aggressive memory optimizations
-EOF
-            ;;
         "SMALL")
             cat > "$CONFIG_DIR/workspace/conf/spark-defaults.conf" << EOF
 # Licensed to the Apache Software Foundation (ASF) under one or more
@@ -474,6 +356,19 @@ EOF
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+
+
+# Default system properties included when running spark-submit.
+# This is useful for setting default environmental settings.
+
+# Example:
+# spark.master                     spark://master:7077
+# spark.eventLog.enabled           true
+# spark.eventLog.dir               hdfs://namenode:8021/directory
+# spark.serializer                 org.apache.spark.serializer.KryoSerializer
+# spark.driver.memory              5g
+# spark.executor.extraJavaOptions  -XX:+PrintGCDetails -Dkey=value -Dnumbers="one two three"
 
 # Configurações relativas ao MinIO e S3
 spark.hadoop.fs.s3a.endpoint                                   http://minio:9000
@@ -484,6 +379,7 @@ spark.hadoop.fs.s3a.path.style.access                          true
 spark.hadoop.fs.s3a.impl                                       org.apache.hadoop.fs.s3a.S3AFileSystem
 
 # Configurações relativas ao Hive Metastore
+
 spark.hadoop.javax.jdo.option.ConnectionDriverName             org.postgresql.Driver
 spark.hadoop.javax.jdo.option.ConnectionURL                    jdbc:postgresql://postgres:5432/metastore_db
 spark.hadoop.javax.jdo.option.ConnectionUserName               hive
@@ -495,18 +391,40 @@ spark.hadoop.datanucleus.fixedDatastore                        false
 spark.hadoop.hive.metastore.schema.verification                false
 spark.hadoop.hive.metastore.schema.verification.record.version false
 
+#spark.hadoop.metastore.catalog.default                         hive
+#spark.sql.defaultCatalog                                       hive
+
 spark.sql.warehouse.dir                                        s3a://warehouse/
 spark.sql.catalogImplementation                                hive
 spark.sql.hive.metastore.version                               3.0.0
 spark.sql.hive.metastore.uris                                  thrift://hive-metastore:9083
+#spark.sql.hive.metastore.jars=builtin (only for metastore version 2.3.9)
+#spark.sql.hive.metastore.jars                                  maven 
 spark.sql.hive.metastore.jars                                  /usr/local/lib/python3.10/dist-packages/pyspark/hms-3.0.0/jars/*
 spark.sql.files.ignoreMissingFiles                             true
 
 # Configurando Cluster
 spark.master                                                   spark://spark-master:7077
-spark.executor.instances                                       2
 
-# Using Spark defaults for stability - no aggressive memory optimizations
+# Memory Configuration
+spark.driver.memory                                            2g
+spark.driver.maxResultSize                                     1g
+spark.executor.memory                                          512m
+spark.executor.cores                                           2
+spark.sql.adaptive.enabled                                     true
+spark.sql.adaptive.coalescePartitions.enabled                  true
+
+# Dynamic Resource Allocation
+spark.dynamicAllocation.enabled                                true
+spark.dynamicAllocation.initialExecutors                       1
+spark.dynamicAllocation.minExecutors                           1
+spark.dynamicAllocation.maxExecutors                           4
+spark.dynamicAllocation.executorIdleTimeout                    60s
+spark.dynamicAllocation.cachedExecutorIdleTimeout              300s
+
+# Configurando Logs
+#spark.eventLog.enabled                                         true
+#spark.eventLog.dir                                             s3a://logs/
 EOF
             ;;
         "MEDIUM")
@@ -525,6 +443,19 @@ EOF
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+
+
+# Default system properties included when running spark-submit.
+# This is useful for setting default environmental settings.
+
+# Example:
+# spark.master                     spark://master:7077
+# spark.eventLog.enabled           true
+# spark.eventLog.dir               hdfs://namenode:8021/directory
+# spark.serializer                 org.apache.spark.serializer.KryoSerializer
+# spark.driver.memory              5g
+# spark.executor.extraJavaOptions  -XX:+PrintGCDetails -Dkey=value -Dnumbers="one two three"
 
 # Configurações relativas ao MinIO e S3
 spark.hadoop.fs.s3a.endpoint                                   http://minio:9000
@@ -535,6 +466,7 @@ spark.hadoop.fs.s3a.path.style.access                          true
 spark.hadoop.fs.s3a.impl                                       org.apache.hadoop.fs.s3a.S3AFileSystem
 
 # Configurações relativas ao Hive Metastore
+
 spark.hadoop.javax.jdo.option.ConnectionDriverName             org.postgresql.Driver
 spark.hadoop.javax.jdo.option.ConnectionURL                    jdbc:postgresql://postgres:5432/metastore_db
 spark.hadoop.javax.jdo.option.ConnectionUserName               hive
@@ -546,21 +478,43 @@ spark.hadoop.datanucleus.fixedDatastore                        false
 spark.hadoop.hive.metastore.schema.verification                false
 spark.hadoop.hive.metastore.schema.verification.record.version false
 
+#spark.hadoop.metastore.catalog.default                         hive
+#spark.sql.defaultCatalog                                       hive
+
 spark.sql.warehouse.dir                                        s3a://warehouse/
 spark.sql.catalogImplementation                                hive
 spark.sql.hive.metastore.version                               3.0.0
 spark.sql.hive.metastore.uris                                  thrift://hive-metastore:9083
+#spark.sql.hive.metastore.jars=builtin (only for metastore version 2.3.9)
+#spark.sql.hive.metastore.jars                                  maven 
 spark.sql.hive.metastore.jars                                  /usr/local/lib/python3.10/dist-packages/pyspark/hms-3.0.0/jars/*
 spark.sql.files.ignoreMissingFiles                             true
 
 # Configurando Cluster
 spark.master                                                   spark://spark-master:7077
-spark.executor.instances                                       2
 
-# Using Spark defaults for stability - no aggressive memory optimizations
+# Memory Configuration - Medium tier
+spark.driver.memory                                            4g
+spark.driver.maxResultSize                                     2g
+spark.executor.memory                                          1g
+spark.executor.cores                                           4
+spark.sql.adaptive.enabled                                     true
+spark.sql.adaptive.coalescePartitions.enabled                  true
+
+# Dynamic Resource Allocation
+spark.dynamicAllocation.enabled                                true
+spark.dynamicAllocation.initialExecutors                       2
+spark.dynamicAllocation.minExecutors                           1
+spark.dynamicAllocation.maxExecutors                           8
+spark.dynamicAllocation.executorIdleTimeout                    60s
+spark.dynamicAllocation.cachedExecutorIdleTimeout              300s
+
+# Configurando Logs
+#spark.eventLog.enabled                                         true
+#spark.eventLog.dir                                             s3a://logs/
 EOF
             ;;
-        "LARGE"|"XLARGE"|"HUGE")
+        "LARGE")
             cat > "$CONFIG_DIR/workspace/conf/spark-defaults.conf" << EOF
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -576,6 +530,19 @@ EOF
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+
+
+# Default system properties included when running spark-submit.
+# This is useful for setting default environmental settings.
+
+# Example:
+# spark.master                     spark://master:7077
+# spark.eventLog.enabled           true
+# spark.eventLog.dir               hdfs://namenode:8021/directory
+# spark.serializer                 org.apache.spark.serializer.KryoSerializer
+# spark.driver.memory              5g
+# spark.executor.extraJavaOptions  -XX:+PrintGCDetails -Dkey=value -Dnumbers="one two three"
 
 # Configurações relativas ao MinIO e S3
 spark.hadoop.fs.s3a.endpoint                                   http://minio:9000
@@ -586,6 +553,7 @@ spark.hadoop.fs.s3a.path.style.access                          true
 spark.hadoop.fs.s3a.impl                                       org.apache.hadoop.fs.s3a.S3AFileSystem
 
 # Configurações relativas ao Hive Metastore
+
 spark.hadoop.javax.jdo.option.ConnectionDriverName             org.postgresql.Driver
 spark.hadoop.javax.jdo.option.ConnectionURL                    jdbc:postgresql://postgres:5432/metastore_db
 spark.hadoop.javax.jdo.option.ConnectionUserName               hive
@@ -597,18 +565,40 @@ spark.hadoop.datanucleus.fixedDatastore                        false
 spark.hadoop.hive.metastore.schema.verification                false
 spark.hadoop.hive.metastore.schema.verification.record.version false
 
+#spark.hadoop.metastore.catalog.default                         hive
+#spark.sql.defaultCatalog                                       hive
+
 spark.sql.warehouse.dir                                        s3a://warehouse/
 spark.sql.catalogImplementation                                hive
 spark.sql.hive.metastore.version                               3.0.0
 spark.sql.hive.metastore.uris                                  thrift://hive-metastore:9083
+#spark.sql.hive.metastore.jars=builtin (only for metastore version 2.3.9)
+#spark.sql.hive.metastore.jars                                  maven 
 spark.sql.hive.metastore.jars                                  /usr/local/lib/python3.10/dist-packages/pyspark/hms-3.0.0/jars/*
 spark.sql.files.ignoreMissingFiles                             true
 
 # Configurando Cluster
 spark.master                                                   spark://spark-master:7077
-spark.executor.instances                                       4
 
-# Using Spark defaults for stability - no aggressive memory optimizations
+# Memory Configuration - Large tier
+spark.driver.memory                                            8g
+spark.driver.maxResultSize                                     4g
+spark.executor.memory                                          2g
+spark.executor.cores                                           8
+spark.sql.adaptive.enabled                                     true
+spark.sql.adaptive.coalescePartitions.enabled                  true
+
+# Dynamic Resource Allocation
+spark.dynamicAllocation.enabled                                true
+spark.dynamicAllocation.initialExecutors                       4
+spark.dynamicAllocation.minExecutors                           1
+spark.dynamicAllocation.maxExecutors                           16
+spark.dynamicAllocation.executorIdleTimeout                    60s
+spark.dynamicAllocation.cachedExecutorIdleTimeout              300s
+
+# Configurando Logs
+#spark.eventLog.enabled                                         true
+#spark.eventLog.dir                                             s3a://logs/
 EOF
             ;;
     esac
@@ -624,19 +614,15 @@ generate_docker_compose_config() {
     local trino_memory_reservation
     
     case $tier in
-        "MINIMAL")
-            trino_memory_limit="384M"
-            trino_memory_reservation="256M"
-            ;;
         "SMALL")
-            trino_memory_limit="768M"
-            trino_memory_reservation="512M"
-            ;;
-        "MEDIUM")
             trino_memory_limit="2G"
             trino_memory_reservation="1G"
             ;;
-        "LARGE"|"XLARGE"|"HUGE")
+        "MEDIUM")
+            trino_memory_limit="4G"
+            trino_memory_reservation="2G"
+            ;;
+        "LARGE")
             trino_memory_limit="8G"
             trino_memory_reservation="4G"
             ;;
@@ -664,22 +650,17 @@ display_config_summary() {
     echo ""
     echo -e "${CYAN}Trino Configuration:${NC}"
     case $tier in
-        "MINIMAL")
-            echo "  - Heap Size: 256MB"
-            echo "  - Query Memory: 128MB"
-            echo "  - Docker Limit: 384MB"
-            ;;
         "SMALL")
-            echo "  - Heap Size: 512MB"
-            echo "  - Query Memory: 256MB"
-            echo "  - Docker Limit: 768MB"
-            ;;
-        "MEDIUM")
             echo "  - Heap Size: 2GB"
-            echo "  - Query Memory: 1GB"
+            echo "  - Query Memory: 512MB"
             echo "  - Docker Limit: 2GB"
             ;;
-        "LARGE"|"XLARGE"|"HUGE")
+        "MEDIUM")
+            echo "  - Heap Size: 4GB"
+            echo "  - Query Memory: 1GB"
+            echo "  - Docker Limit: 4GB"
+            ;;
+        "LARGE")
             echo "  - Heap Size: 8GB"
             echo "  - Query Memory: 4GB"
             echo "  - Docker Limit: 8GB"
@@ -689,21 +670,23 @@ display_config_summary() {
     echo ""
     echo -e "${CYAN}Spark Configuration:${NC}"
     case $tier in
-        "MINIMAL")
-            echo "  - Using Spark defaults for stability"
-            echo "  - Executor Instances: 1"
-            ;;
         "SMALL")
-            echo "  - Using Spark defaults for stability"
-            echo "  - Executor Instances: 2"
+            echo "  - Driver Memory: 2GB"
+            echo "  - Executor Memory: 512MB"
+            echo "  - Executor Cores: 2"
+            echo "  - Max Executors: 4"
             ;;
         "MEDIUM")
-            echo "  - Using Spark defaults for stability"
-            echo "  - Executor Instances: 2"
+            echo "  - Driver Memory: 4GB"
+            echo "  - Executor Memory: 1GB"
+            echo "  - Executor Cores: 4"
+            echo "  - Max Executors: 8"
             ;;
-        "LARGE"|"XLARGE"|"HUGE")
-            echo "  - Using Spark defaults for stability"
-            echo "  - Executor Instances: 4"
+        "LARGE")
+            echo "  - Driver Memory: 8GB"
+            echo "  - Executor Memory: 2GB"
+            echo "  - Executor Cores: 8"
+            echo "  - Max Executors: 16"
             ;;
     esac
 }
@@ -746,7 +729,7 @@ show_usage() {
     echo "Options:"
     echo "  -h, --help              Show this help message"
     echo "  -m, --memory SIZE       Override detected memory (in MB)"
-    echo "  -t, --tier TIER         Override detected tier (MINIMAL|SMALL|MEDIUM|LARGE|XLARGE|HUGE)"
+    echo "  -t, --tier TIER         Override detected tier (SMALL|MEDIUM|LARGE)"
     echo "  -f, --force             Force regeneration of configurations"
     echo "  -v, --verbose           Enable verbose output"
     echo ""
@@ -845,7 +828,12 @@ main() {
     print_success "Configuration complete!"
     print_status "You can now run: docker-compose up -d"
     print_status "To rebuild images with new configs: docker-compose build"
+    print_status ""
+    print_status "Quick restart without full rebuild:"
+    print_status "  docker-compose build trino workspace"
+    print_status "  docker-compose up -d trino workspace"
 }
 
 # Run main function
 main "$@"
+

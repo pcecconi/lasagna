@@ -62,11 +62,13 @@ docker compose up -d
 The `setup-lasagna.sh` script provides intelligent configuration based on your system's available memory, ensuring optimal performance and stability.
 
 #### Features:
-- **Memory Detection**: Automatically detects available Docker memory
-- **Tiered Configuration**: Provides 6 memory tiers (2GB to 64GB+)
+- **Memory Detection**: Automatically detects available Docker memory on macOS and Linux
+- **Tiered Configuration**: Provides 3 optimized memory tiers (4GB to 16GB+)
 - **Stable Settings**: Focuses on reliability over aggressive optimization
-- **Backup Protection**: Creates timestamped backups of existing configurations
-- **Comprehensive Configuration**: Sets up Spark, Trino, and JVM settings
+- **Automatic Backup**: Creates timestamped backups of existing configurations before overwriting
+- **Comprehensive Configuration**: Sets up Spark, Trino, and Docker Compose settings
+- **Smart Defaults**: Uses 75% of system memory for Docker allocation
+- **Override Options**: Manual memory/tier specification with command-line flags
 
 #### Usage:
 ```bash
@@ -81,13 +83,41 @@ bash setup-lasagna.sh
 # 5. Display configuration summary
 ```
 
+#### 💾 Automatic Backup System
+
+The setup script automatically creates timestamped backups of existing configuration files before overwriting them:
+
+- **Backup Format**: `filename.YYYYMMDD_HHMMSS.backup`
+- **Files Backed Up**:
+  - `images/trino/conf/config.properties`
+  - `images/trino/conf/jvm.config`
+  - `images/workspace/conf/spark-defaults.conf`
+  - `docker-compose.yml`
+
+**Example Output**:
+```
+[INFO] Backed up existing configuration: config.properties -> config.properties.20250927_111518.backup
+[INFO] Backed up existing configuration: jvm.config -> jvm.config.20250927_111518.backup
+```
+
+**Restoring Backups**: Simply copy the backup file back to its original name:
+```bash
+cp images/trino/conf/config.properties.20250927_111518.backup images/trino/conf/config.properties
+```
+
 #### Memory Tiers:
-- **MINIMAL (2GB)**: Basic functionality, minimal resources
-- **SMALL (4GB)**: Light workloads, single-user development
-- **MEDIUM (8GB)**: Standard development, moderate workloads
-- **LARGE (16GB)**: Heavy workloads, multiple users
-- **XLARGE (32GB)**: Enterprise-level workloads
-- **HUGE (64GB+)**: Maximum performance configuration
+- **SMALL (4-8GB)**: Development and small datasets
+  - Trino Heap: 2GB, Query Memory: 512MB
+  - Spark Driver: 2GB, Executor Memory: 512MB
+  - Docker Limit: 768MB
+- **MEDIUM (8-16GB)**: Medium workloads and standard development
+  - Trino Heap: 4GB, Query Memory: 1GB
+  - Spark Driver: 4GB, Executor Memory: 1GB
+  - Docker Limit: 2GB
+- **LARGE (16GB+)**: Production workloads and large datasets
+  - Trino Heap: 8GB, Query Memory: 4GB
+  - Spark Driver: 8GB, Executor Memory: 2GB
+  - Docker Limit: 8GB
 
 ### 🔍 Validation Script (`validate-setup.sh`)
 
@@ -232,8 +262,40 @@ If LASAGNA is running slowly or consuming too much memory:
 # Re-run setup with different memory tier
 bash setup-lasagna.sh
 
+# Force specific tier for testing
+bash setup-lasagna.sh -t SMALL
+
+# Override memory detection
+bash setup-lasagna.sh -m 6144
+
+# Force regeneration of configurations
+bash setup-lasagna.sh -f
+
 # Check Docker resource allocation
 docker stats
+```
+
+#### 🔧 Setup Script Options
+The setup script supports several command-line options:
+
+```bash
+# Show help
+bash setup-lasagna.sh -h
+
+# Override detected memory (in MB)
+bash setup-lasagna.sh -m 8192
+
+# Force specific tier
+bash setup-lasagna.sh -t MEDIUM
+
+# Force regeneration (skip confirmation)
+bash setup-lasagna.sh -f
+
+# Enable verbose output
+bash setup-lasagna.sh -v
+
+# Combine options
+bash setup-lasagna.sh -m 12288 -t MEDIUM -f
 ```
 
 #### 📊 Table Format Problems
