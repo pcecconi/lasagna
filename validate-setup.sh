@@ -147,7 +147,7 @@ schema = StructType([
 df = spark.createDataFrame(test_df, schema=schema)
 
 # Test Delta Lake functionality
-df.write.format('delta').mode('overwrite').saveAsTable('test_delta_table')
+df.write.format('delta').saveAsTable('test_delta_table')
 
 # Test ACID transaction
 new_data = []
