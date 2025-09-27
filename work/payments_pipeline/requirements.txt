@@ -1,0 +1,14 @@
+# Payments Data Generator Dependencies
+# Run this outside the container for faster data generation
+
+# Core data processing
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Optional: For enhanced data generation
+faker>=18.0.0  # For more realistic fake data
+python-dateutil>=2.8.0  # Better date handling
+
+# Development and testing
+pytest>=7.0.0  # For running tests
+pytest-cov>=4.0.0  # For coverage reporting
