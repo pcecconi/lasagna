@@ -20,6 +20,7 @@ docker-compose up -d
 - **Smart Defaults**: Uses 75% of system memory for Docker allocation
 - **Override Options**: Manual memory/tier specification
 - **Validation**: Checks all configuration files before proceeding
+- **Automatic Backup**: Creates timestamped backups of existing configurations before overwriting
 
 ## 🎯 Memory Tiers
 
@@ -112,10 +113,34 @@ docker-compose up -d
 
 1. **Detect Memory**: System memory → Docker allocation
 2. **Determine Tier**: Map memory to appropriate tier
-3. **Generate Configs**: Create optimized configurations
-4. **Validate**: Check all files are present
-5. **Summary**: Display configuration details
-6. **Ready**: Stack ready to start
+3. **Backup Existing**: Create timestamped backups of current configs
+4. **Generate Configs**: Create optimized configurations
+5. **Validate**: Check all files are present
+6. **Summary**: Display configuration details
+7. **Ready**: Stack ready to start
+
+## 💾 Automatic Backup System
+
+The script automatically creates backups of existing configuration files before overwriting them:
+
+- **Backup Format**: `filename.YYYYMMDD_HHMMSS.backup`
+- **Backup Location**: Same directory as original files
+- **Files Backed Up**:
+  - `images/trino/conf/config.properties`
+  - `images/trino/conf/jvm.config`
+  - `images/workspace/conf/spark-defaults.conf`
+  - `docker-compose.yml`
+
+**Example Backup Output**:
+```
+[INFO] Backed up existing configuration: config.properties -> config.properties.20250927_111518.backup
+[INFO] Backed up existing configuration: jvm.config -> jvm.config.20250927_111518.backup
+```
+
+**Restoring Backups**: Simply copy the backup file back to its original name:
+```bash
+cp images/trino/conf/config.properties.20250927_111518.backup images/trino/conf/config.properties
+```
 
 ## 💡 Tips
 

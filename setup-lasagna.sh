@@ -35,6 +35,23 @@ MEMORY_TIERS=(
 
 # Configuration templates will be generated dynamically
 
+# Function to backup existing configuration files
+backup_config_file() {
+    local file_path="$1"
+    local file_name=$(basename "$file_path")
+    local file_dir=$(dirname "$file_path")
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local backup_file="$file_dir/${file_name}.${timestamp}.backup"
+    
+    if [ -f "$file_path" ]; then
+        cp "$file_path" "$backup_file"
+        print_status "Backed up existing configuration: $file_name -> ${file_name}.${timestamp}.backup"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Function to print colored output
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -113,6 +130,10 @@ determine_memory_tier() {
 generate_trino_config() {
     local tier=$1
     local available_memory=$2
+    
+    # Backup existing Trino configuration files
+    backup_config_file "$CONFIG_DIR/trino/conf/config.properties"
+    backup_config_file "$CONFIG_DIR/trino/conf/jvm.config"
     
     case $tier in
         "SMALL")
@@ -314,6 +335,9 @@ EOF
 generate_spark_config() {
     local tier=$1
     local available_memory=$2
+    
+    # Backup existing Spark configuration file
+    backup_config_file "$CONFIG_DIR/workspace/conf/spark-defaults.conf"
     
     case $tier in
         "SMALL")
@@ -605,7 +629,7 @@ generate_docker_compose_config() {
     esac
     
     # Backup original docker-compose.yml
-    cp "$SCRIPT_DIR/docker-compose.yml" "$SCRIPT_DIR/docker-compose.yml.backup"
+    backup_config_file "$SCRIPT_DIR/docker-compose.yml"
     
     # Update docker-compose.yml with memory limits
     sed -i.bak "s/memory: 768M/memory: $trino_memory_limit/g" "$SCRIPT_DIR/docker-compose.yml"
