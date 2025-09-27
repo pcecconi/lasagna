@@ -18,21 +18,6 @@ For the best experience, use the automated setup script that configures optimal 
 git clone <repository-url>
 cd lasagna
 
-# Run the automated setup script
-bash setup-lasagna.sh
-
-# Start the stack
-docker compose up -d
-```
-
-### Option 2: Manual Setup
-If you prefer manual configuration:
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd lasagna
-
 # Start the stack
 docker compose up -d
 ```
@@ -59,7 +44,7 @@ docker compose up -d
 
 ### 🚀 Automated Setup Script (`setup-lasagna.sh`)
 
-The `setup-lasagna.sh` script provides intelligent configuration based on your system's available memory, ensuring optimal performance and stability.
+The `setup-lasagna.sh` script provides intelligent configuration based on your system's available memory, ensuring optimal performance and stability. Anyway, on a desktop computer I recommend sticking with the SMALL tier.
 
 #### Features:
 - **Memory Detection**: Automatically detects available Docker memory on macOS and Linux
