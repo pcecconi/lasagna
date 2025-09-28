@@ -1,7 +1,83 @@
 #!/bin/bash
 
 # Payments Aggregator Data Generator
-# This script demonstrates how to use the data generator
+# This script provides a convenient wrapper for the data generator
+
+# Function to display usage
+show_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --initial              Generate initial dataset"
+    echo "  --incremental          Generate incremental data"
+    echo "  --start-date DATE      Start date (YYYY-MM-DD) for initial generation"
+    echo "  --end-date DATE        End date (YYYY-MM-DD) for initial generation"
+    echo "  --date DATE            Specific date (YYYY-MM-DD) for incremental generation"
+    echo "  --output-dir DIR       Output directory (default: ./raw_data)"
+    echo "  --help                 Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --initial --start-date 2024-01-01 --end-date 2024-06-30"
+    echo "  $0 --incremental --date 2024-07-01"
+    echo "  $0 --incremental"
+    echo ""
+    echo "If no parameters are provided, the script will use default values:"
+    echo "  --initial --start-date 2024-01-01 --end-date 2024-06-30"
+}
+
+# Default values
+INITIAL=false
+INCREMENTAL=false
+START_DATE=""
+END_DATE=""
+DATE=""
+OUTPUT_DIR="./raw_data"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --initial)
+            INITIAL=true
+            shift
+            ;;
+        --incremental)
+            INCREMENTAL=true
+            shift
+            ;;
+        --start-date)
+            START_DATE="$2"
+            shift 2
+            ;;
+        --end-date)
+            END_DATE="$2"
+            shift 2
+            ;;
+        --date)
+            DATE="$2"
+            shift 2
+            ;;
+        --output-dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo "❌ Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# If no mode specified, default to initial with default dates
+if [ "$INITIAL" = false ] && [ "$INCREMENTAL" = false ]; then
+    INITIAL=true
+    START_DATE="2024-01-01"
+    END_DATE="2024-06-30"
+fi
 
 echo "🚀 Payments Aggregator Data Generator"
 echo "====================================="
@@ -17,46 +93,79 @@ echo "🔄 Activating virtual environment..."
 source venv/bin/activate
 
 # Create output directory
-mkdir -p raw_data
+mkdir -p "$OUTPUT_DIR"
 
-# Generate initial dataset (6 months: Jan 2024 - Jun 2024)
-echo "📊 Generating initial dataset (6 months)..."
-python data_generator.py \
-    --initial \
-    --start-date 2024-01-01 \
-    --end-date 2024-06-30 \
-    --output-dir ./raw_data
+# Build the command
+CMD="python data_generator.py --output-dir $OUTPUT_DIR"
 
-echo ""
-echo "✅ Initial dataset generated!"
-echo "📁 Check the ./raw_data directory for:"
-echo "   - merchants_initial_2024-01-01_2024-06-30.csv"
-echo "   - transactions_initial_2024-01-01_2024-06-30.csv"
-echo "   - data_state.json (tracks generation state)"
-
-echo ""
-echo "🔄 To generate incremental data (one more day):"
-echo "   python data_generator.py --incremental"
-echo ""
-echo "🔄 To generate data for a specific date:"
-echo "   python data_generator.py --incremental --date 2024-07-01"
-
-echo ""
-echo "📈 Data Summary:"
-echo "================"
-if [ -f "./raw_data/merchants_initial_2024-01-01_2024-06-30.csv" ]; then
-    merchant_count=$(wc -l < "./raw_data/merchants_initial_2024-01-01_2024-06-30.csv")
-    echo "👥 Total merchants: $((merchant_count - 1))"  # Subtract header
+if [ "$INITIAL" = true ]; then
+    CMD="$CMD --initial"
+    if [ -n "$START_DATE" ]; then
+        CMD="$CMD --start-date $START_DATE"
+    fi
+    if [ -n "$END_DATE" ]; then
+        CMD="$CMD --end-date $END_DATE"
+    fi
+elif [ "$INCREMENTAL" = true ]; then
+    CMD="$CMD --incremental"
+    if [ -n "$DATE" ]; then
+        CMD="$CMD --date $DATE"
+    fi
 fi
 
-if [ -f "./raw_data/transactions_initial_2024-01-01_2024-06-30.csv" ]; then
-    transaction_count=$(wc -l < "./raw_data/transactions_initial_2024-01-01_2024-06-30.csv")
-    echo "💳 Total transactions: $((transaction_count - 1))"  # Subtract header
+# Show what will be executed
+echo ""
+echo "📋 Command to execute:"
+echo "$CMD"
+echo ""
+
+# Confirmation prompt
+read -p "🤔 Do you want to proceed with data generation? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "❌ Data generation cancelled."
+    exit 0
 fi
 
 echo ""
-echo "🎯 Next Steps:"
-echo "1. Review the generated CSV files"
-echo "2. Run incremental generation to add more data"
-echo "3. Build bronze layer ingestion pipeline"
-echo "4. Create silver layer transformations"
+echo "📊 Starting data generation..."
+eval $CMD
+
+# Check if generation was successful
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ Data generation completed successfully!"
+    echo "📁 Check the $OUTPUT_DIR directory for generated files"
+    
+    # Show summary if initial generation
+    if [ "$INITIAL" = true ]; then
+        echo ""
+        echo "📈 Data Summary:"
+        echo "================"
+        
+        # Find the generated files
+        MERCHANTS_FILE=$(find "$OUTPUT_DIR" -name "merchants_initial_*.csv" | head -1)
+        TRANSACTIONS_FILE=$(find "$OUTPUT_DIR" -name "transactions_initial_*.csv" | head -1)
+        
+        if [ -f "$MERCHANTS_FILE" ]; then
+            merchant_count=$(wc -l < "$MERCHANTS_FILE")
+            echo "👥 Total merchants: $((merchant_count - 1))"  # Subtract header
+        fi
+        
+        if [ -f "$TRANSACTIONS_FILE" ]; then
+            transaction_count=$(wc -l < "$TRANSACTIONS_FILE")
+            echo "💳 Total transactions: $((transaction_count - 1))"  # Subtract header
+        fi
+    fi
+    
+    echo ""
+    echo "🎯 Next Steps:"
+    echo "1. Review the generated CSV files"
+    echo "2. Run incremental generation to add more data"
+    echo "3. Build bronze layer ingestion pipeline"
+    echo "4. Create silver layer transformations"
+else
+    echo ""
+    echo "❌ Data generation failed!"
+    exit 1
+fi

@@ -394,9 +394,10 @@ class PaymentsDataGenerator:
         pd.DataFrame(initial_merchants).to_csv(merchants_file, index=False)
         print(f"✅ Saved {len(initial_merchants)} merchants to {merchants_file}")
         
-        # Generate data for each month
+        # Generate data for each month in chunks
         current_date = start_date.replace(day=1)  # Start of first month
-        all_transactions = []
+        total_transactions = 0
+        transaction_files = []
         
         while current_date <= end_date:
             month_end = (current_date + timedelta(days=32)).replace(day=1) - timedelta(days=1)
@@ -410,19 +411,44 @@ class PaymentsDataGenerator:
                 print(f"   📈 Added {len(new_merchants)} new merchants")
                 print(f"   📉 Churned {len(churned_merchants)} merchants")
             
-            # Generate daily transactions
+            # Generate daily transactions for this month
+            month_transactions = []
             daily_date = current_date
             while daily_date <= month_end:
                 daily_transactions = self.generate_daily_transactions(daily_date)
-                all_transactions.extend(daily_transactions)
+                month_transactions.extend(daily_transactions)
                 daily_date += timedelta(days=1)
+            
+            # Save monthly transactions to avoid memory accumulation
+            month_file = self.output_dir / f"transactions_{current_date.strftime('%Y%m')}.csv"
+            pd.DataFrame(month_transactions).to_csv(month_file, index=False)
+            transaction_files.append(month_file)
+            total_transactions += len(month_transactions)
+            print(f"   💾 Saved {len(month_transactions)} transactions to {month_file}")
             
             current_date = (current_date + timedelta(days=32)).replace(day=1)
         
-        # Save transactions
+        # Combine all monthly files into a single file using streaming
+        print("🔄 Combining monthly transaction files...")
         transactions_file = self.output_dir / f"transactions_initial_{start_date}_{end_date}.csv"
-        pd.DataFrame(all_transactions).to_csv(transactions_file, index=False)
-        print(f"✅ Saved {len(all_transactions)} transactions to {transactions_file}")
+        
+        with open(transactions_file, 'w', newline='') as outfile:
+            writer = None
+            for i, monthly_file in enumerate(transaction_files):
+                with open(monthly_file, 'r') as infile:
+                    if i == 0:
+                        # First file: copy header and all data
+                        outfile.write(infile.read())
+                    else:
+                        # Subsequent files: skip header, copy data only
+                        next(infile)  # Skip header
+                        outfile.write(infile.read())
+        
+        # Clean up monthly files
+        for f in transaction_files:
+            f.unlink()
+        
+        print(f"✅ Saved {total_transactions} transactions to {transactions_file}")
         
         # Update state
         self.state['last_generated_date'] = end_date
@@ -430,7 +456,7 @@ class PaymentsDataGenerator:
         
         print(f"🎉 Initial data generation complete!")
         print(f"   📊 Total merchants: {len(self.state['merchants'])}")
-        print(f"   💳 Total transactions: {self.state['total_transactions']}")
+        print(f"   💳 Total transactions: {total_transactions}")
 
     def generate_incremental_data(self, target_date: date):
         """Generate incremental data for a specific date"""
