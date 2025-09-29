@@ -277,3 +277,4 @@ class DataQualityValidator:
                 "error": str(e),
                 "overall_passed": False
             }
+

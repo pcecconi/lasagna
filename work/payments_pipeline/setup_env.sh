@@ -46,3 +46,4 @@ echo "   python test_generator.py"
 echo ""
 echo "📊 To generate initial data:"
 echo "   ./generate_data.sh"
+

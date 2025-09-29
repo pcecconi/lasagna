@@ -112,3 +112,4 @@ DATA_CONFIG = {
     'timestamp_format': '%Y-%m-%d %H:%M:%S',
     'decimal_places': 2
 }
+

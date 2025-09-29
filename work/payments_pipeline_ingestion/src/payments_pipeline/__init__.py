@@ -9,3 +9,4 @@ ELT-based data pipeline for payments aggregator service.
 
 __version__ = "1.0.0"
 __author__ = "Payments Data Engineering Team"
+

@@ -180,3 +180,4 @@ def get_config(config_path: Optional[str] = None) -> PipelineConfig:
         return PipelineConfig.from_file(config_path)
     else:
         return PipelineConfig.from_env()
+

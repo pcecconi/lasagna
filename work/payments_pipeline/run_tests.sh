@@ -22,3 +22,4 @@ pytest tests/ --cov=. --cov-report=term-missing
 
 echo ""
 echo "✅ Tests completed!"
+
