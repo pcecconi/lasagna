@@ -21,7 +21,7 @@ ENV PATH "${JAVA_HOME}/bin:$PATH"
  #| Instalando Spark 3.4.3 |
  #+------------------------+
 
-RUN curl -O https://archive.apache.org/dist/spark/spark-3.4.3/spark-3.4.3-bin-hadoop3.tgz &&\
+RUN curl -O https://mirrors.huaweicloud.com/apache/spark/spark-3.4.3/spark-3.4.3-bin-hadoop3.tgz &&\
     tar zxvf spark-3.4.3-bin-hadoop3.tgz -C /usr/local &&\
     rm spark-3.4.3-bin-hadoop3.tgz &&\
     cd /usr/local &&\
