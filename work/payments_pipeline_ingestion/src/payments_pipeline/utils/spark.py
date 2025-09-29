@@ -60,10 +60,9 @@ def get_spark_session(
         .appName(app_name) \
         .master(master) \
         .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.4_2.12:1.4.2") \
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
         .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkCatalog") \
-        .config("spark.sql.catalog.spark_catalog.type", "hive") \
-        .config("spark.sql.catalog.spark_catalog.uri", "thrift://hive-metastore:9083") \
-        .config("spark.sql.catalog.spark_catalog.warehouse", "s3a://warehouse/") \
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .enableHiveSupport()
     
     # Apply configuration during session creation

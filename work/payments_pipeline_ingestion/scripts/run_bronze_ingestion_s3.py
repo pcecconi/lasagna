@@ -57,9 +57,24 @@ def main():
             file_size = file_path.stat().st_size
             logger.info(f"   {file_path.name} ({file_size:,} bytes)")
         
-        # Upload files to S3
-        logger.info(f"\n📤 Uploading files to S3...")
-        s3_paths = uploader.upload_payments_data(data_dir)
+        # Check if files are already uploaded to S3
+        logger.info(f"\n📤 Checking S3 for existing files...")
+        existing_files = uploader.list_uploaded_files("payments")
+        
+        # Check if we have the required CSV files
+        merchant_files = [f for f in existing_files if "merchants" in f and f.startswith("payments/")]
+        transaction_files = [f for f in existing_files if "transactions" in f and f.startswith("payments/")]
+        
+        if merchant_files and transaction_files:
+            logger.info(f"✅ Found existing CSV files in S3, skipping upload")
+            s3_paths = {
+                "merchants": [f"s3a://warehouse/{f}" for f in merchant_files],
+                "transactions": [f"s3a://warehouse/{f}" for f in transaction_files],
+                "all_files": [f"s3a://warehouse/{f}" for f in existing_files if f.startswith("payments/")]
+            }
+        else:
+            logger.info(f"📤 Uploading files to S3...")
+            s3_paths = uploader.upload_payments_data(data_dir)
         
         # Initialize bronze ingestion job
         logger.info(f"\n🏗️ Initializing bronze ingestion job...")
@@ -93,31 +108,33 @@ def main():
         logger.info(f"\n🔍 Validating ingestion results...")
         
         # Validate merchants table
+        merchants_validation = {"row_count": 0}
         try:
-            merchants_validation = bronze_job.validate_ingestion("iceberg.payments_bronze.merchants_raw")
+            merchants_validation = bronze_job.validate_ingestion("spark_catalog.payments_bronze.merchants_raw")
             logger.info(f"✅ Merchants: {merchants_validation['row_count']:,} rows")
         except Exception as e:
             logger.error(f"❌ Merchants validation failed: {e}")
         
         # Validate transactions table
+        transactions_validation = {"row_count": 0}
         try:
-            transactions_validation = bronze_job.validate_ingestion("iceberg.payments_bronze.transactions_raw")
+            transactions_validation = bronze_job.validate_ingestion("spark_catalog.payments_bronze.transactions_raw")
             logger.info(f"✅ Transactions: {transactions_validation['row_count']:,} rows")
         except Exception as e:
             logger.error(f"❌ Transactions validation failed: {e}")
         
         # Show table information
         logger.info(f"\n📋 Bronze layer tables created:")
-        spark.sql("SHOW TABLES IN iceberg.payments_bronze").show()
+        spark.sql("SHOW TABLES IN spark_catalog.payments_bronze").show()
         
         # Show sample data
         logger.info(f"\n📊 Sample data:")
         try:
             logger.info("Merchants sample:")
-            spark.table("iceberg.payments_bronze.merchants_raw").show(3)
+            spark.table("spark_catalog.payments_bronze.merchants_raw").show(3)
             
             logger.info("Transactions sample:")
-            spark.table("iceberg.payments_bronze.transactions_raw").show(3)
+            spark.table("spark_catalog.payments_bronze.transactions_raw").show(3)
         except Exception as e:
             logger.error(f"❌ Error showing sample data: {e}")
         
