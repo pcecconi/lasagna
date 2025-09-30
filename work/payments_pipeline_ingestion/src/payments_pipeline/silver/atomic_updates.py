@@ -233,7 +233,7 @@ class AtomicSilverUpdater:
             self.logger.info("Starting atomic merchant update...")
             
             # Step 1: Create staging table
-            staging_table = "spark_catalog.payments_staging.merchants_staging"
+            staging_table = f"{self.config.iceberg_catalog}.{self.config.silver_namespace}_staging.merchants_staging"
             self._create_staging_merchants_table(staging_table)
             
             # Step 2: Process SCD Type 2 logic in staging
@@ -296,7 +296,7 @@ class AtomicSilverUpdater:
     def _process_scd_type2_merchants(self, bronze_merchants_df: DataFrame) -> DataFrame:
         """Process SCD Type 2 logic for merchants"""
         # Get current merchants
-        current_merchants_df = self.spark.table("spark_catalog.payments_silver.dim_merchants") \
+        current_merchants_df = self.spark.table(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants") \
             .filter(col("is_current") == True)
         
         # Detect changes
@@ -418,7 +418,7 @@ class AtomicSilverUpdater:
         """Atomically swap staging table with production table"""
         # Iceberg handles this atomically
         self.spark.sql(f"""
-            INSERT OVERWRITE spark_catalog.payments_silver.dim_merchants
+            INSERT OVERWRITE {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants
             SELECT * FROM {staging_table}
         """)
     
@@ -439,7 +439,7 @@ class AtomicSilverUpdater:
             self.logger.info(f"Starting atomic payments update for {start_date} to {end_date}")
             
             # Step 1: Create staging table
-            staging_table = "spark_catalog.payments_staging.payments_staging"
+            staging_table = f"{self.config.iceberg_catalog}.{self.config.silver_namespace}_staging.payments_staging"
             self._create_staging_payments_table(staging_table)
             
             # Step 2: Process payments data
@@ -506,7 +506,7 @@ class AtomicSilverUpdater:
     def _process_payments_data(self, bronze_payments_df: DataFrame) -> DataFrame:
         """Process payments data with merchant_sk lookup"""
         # Get current merchants for lookup
-        current_merchants_df = self.spark.table("spark_catalog.payments_silver.dim_merchants") \
+        current_merchants_df = self.spark.table(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants") \
             .filter(col("is_current") == True) \
             .select("merchant_id", "merchant_sk")
         
@@ -519,7 +519,7 @@ class AtomicSilverUpdater:
             self._add_missing_merchants(missing_merchants_df)
             
             # Refresh current merchants after adding missing ones
-            current_merchants_df = self.spark.table("spark_catalog.payments_silver.dim_merchants") \
+            current_merchants_df = self.spark.table(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants") \
                 .filter(col("is_current") == True) \
                 .select("merchant_id", "merchant_sk")
         
@@ -595,7 +595,7 @@ class AtomicSilverUpdater:
         new_merchants_df.write \
             .format("iceberg") \
             .mode("append") \
-            .saveAsTable("spark_catalog.payments_silver.dim_merchants")
+            .saveAsTable(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants")
         
         self.logger.info(f"Added {new_merchants_df.count()} missing merchants to dim_merchants")
     
@@ -634,7 +634,7 @@ class AtomicSilverUpdater:
         """Atomically swap payments data for date range with deduplication"""
         # Use INSERT OVERWRITE with deduplication to prevent duplicates
         self.spark.sql(f"""
-            INSERT OVERWRITE spark_catalog.payments_silver.fact_payments
+            INSERT OVERWRITE {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
             SELECT payment_id, payment_timestamp, payment_date, payment_hour, merchant_id, merchant_sk,
                    payment_amount, transactional_cost_amount, mdr_amount, net_profit, payment_type,
                    card_type, card_brand, card_issuer, payment_status, terminal_id, payment_lat,
@@ -643,7 +643,7 @@ class AtomicSilverUpdater:
                 SELECT *,
                        ROW_NUMBER() OVER (PARTITION BY payment_id ORDER BY payment_timestamp DESC) as rn
                 FROM (
-                    SELECT * FROM spark_catalog.payments_silver.fact_payments
+                    SELECT * FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
                     WHERE payment_date NOT BETWEEN '{start_date}' AND '{end_date}'
                     UNION ALL
                     SELECT * FROM {staging_table}
