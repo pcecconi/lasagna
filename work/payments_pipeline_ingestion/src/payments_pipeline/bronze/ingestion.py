@@ -210,7 +210,7 @@ class BronzeIngestionJob:
         # Write to Iceberg table
         df_bronze.write \
             .format("iceberg") \
-            .mode("overwrite") \
+            .mode("append") \
             .saveAsTable(target_table)
         
         # Get row count
@@ -247,7 +247,7 @@ class BronzeIngestionJob:
         # Write to Iceberg table with partitioning
         df_bronze.write \
             .format("iceberg") \
-            .mode("overwrite") \
+            .mode("append") \
             .option("write-distribution-mode", "hash") \
             .saveAsTable(target_table)
         

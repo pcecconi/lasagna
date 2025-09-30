@@ -1,8 +1,14 @@
 """
-Silver Layer - Data Transformation and Modeling
+Silver Layer Package
 
-ELT approach: Transform raw bronze data into structured star schema
+Contains modules for silver layer data processing including:
+- Atomic updates with SCD Type 2 logic
+- Data quality validation
+- Star schema implementation
 """
 
-# Future silver layer modules will go here
+from .atomic_updates import AtomicSilverUpdater
+from .data_quality import DataQualityChecker
+from .silver_ingestion import SilverIngestionJob
 
+__all__ = ['AtomicSilverUpdater', 'DataQualityChecker', 'SilverIngestionJob']
