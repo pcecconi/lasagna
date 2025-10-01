@@ -21,7 +21,7 @@ MERCHANT_SIZE_CONFIGS = {
         'monthly_volume_range': (500, 10000),
         'avg_transaction': 25.00,
         'mdr_rate_range': (0.029, 0.035),
-        'daily_tx_range': (5, 50),
+        'daily_tx_range': (2, 20),  # Reduced from (5, 50)
         'active_days_per_month': 22,
         'churn_multiplier': 1.5,
         'growth_multiplier': 1.2,
@@ -31,7 +31,7 @@ MERCHANT_SIZE_CONFIGS = {
         'monthly_volume_range': (10000, 100000),
         'avg_transaction': 75.00,
         'mdr_rate_range': (0.025, 0.029),
-        'daily_tx_range': (20, 150),
+        'daily_tx_range': (5, 50),  # Reduced from (20, 150)
         'active_days_per_month': 26,
         'churn_multiplier': 1.0,
         'growth_multiplier': 1.0,
@@ -41,7 +41,7 @@ MERCHANT_SIZE_CONFIGS = {
         'monthly_volume_range': (100000, 1000000),
         'avg_transaction': 200.00,
         'mdr_rate_range': (0.020, 0.025),
-        'daily_tx_range': (100, 500),
+        'daily_tx_range': (20, 100),  # Reduced from (100, 500)
         'active_days_per_month': 28,
         'churn_multiplier': 0.3,
         'growth_multiplier': 0.8,

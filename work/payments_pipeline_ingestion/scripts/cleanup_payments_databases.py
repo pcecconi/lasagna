@@ -25,26 +25,37 @@ from payments_pipeline.utils.spark import get_spark_session
 
 
 def cleanup_database(spark, db_name, force=False):
-    """Clean up a specific database"""
+    """Clean up a specific database using safe Spark SQL operations"""
     try:
         print(f"Cleaning up database: {db_name}")
         
-        # First, drop all tables in the database
-        tables = spark.sql(f'SHOW TABLES IN {db_name}').collect()
-        print(f"  Found {len(tables)} tables to drop")
+        # List tables in the database
+        try:
+            tables_df = spark.sql(f'SHOW TABLES IN {db_name}')
+            tables = [row[1] for row in tables_df.collect()]  # Use index for table name
+            print(f"  Found {len(tables)} tables to drop: {tables}")
+        except Exception as e:
+            print(f"  ⚠️ Could not list tables in {db_name}: {e}")
+            tables = []
         
-        for table in tables:
-            table_name = table.tableName
+        # Drop all tables first
+        for table_name in tables:
             print(f"    Dropping table: {db_name}.{table_name}")
-            spark.sql(f'DROP TABLE IF EXISTS {db_name}.{table_name}')
-            print(f"      ✅ Successfully dropped {table_name}")
+            try:
+                spark.sql(f'DROP TABLE IF EXISTS {db_name}.{table_name}')
+                print(f"      ✅ Successfully dropped {db_name}.{table_name}")
+            except Exception as e:
+                print(f"      ⚠️ Failed to drop {db_name}.{table_name}: {e}")
         
-        # Now drop the database
+        # Drop the database using CASCADE
         print(f"  Dropping database: {db_name}")
-        spark.sql(f'DROP DATABASE {db_name}')
-        print(f"  ✅ Successfully dropped {db_name}")
-        
-        return True
+        try:
+            spark.sql(f'DROP DATABASE IF EXISTS {db_name} CASCADE')
+            print(f"  ✅ Successfully dropped database: {db_name}")
+            return True
+        except Exception as e:
+            print(f"  ❌ Failed to drop database {db_name}: {e}")
+            return False
         
     except Exception as e:
         print(f"  ❌ Failed to clean up {db_name}: {e}")
@@ -75,13 +86,13 @@ def main():
     if args.bronze_only:
         databases_to_clean = ['payments_bronze']
     elif args.silver_only:
-        databases_to_clean = ['payments_silver', 'payments_staging']
+        databases_to_clean = ['payments_silver', 'payments_silver_staging']
     else:
-        databases_to_clean = ['payments_bronze', 'payments_silver', 'payments_staging']
+        databases_to_clean = ['payments_bronze', 'payments_silver', 'payments_silver_staging']
     
     # Check which databases actually exist
     existing_databases = spark.sql('SHOW DATABASES').collect()
-    existing_db_names = [row.namespace for row in existing_databases]
+    existing_db_names = [row[0] for row in existing_databases]  # Use index instead of column name
     
     databases_to_clean = [db for db in databases_to_clean if db in existing_db_names]
     
@@ -119,3 +130,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

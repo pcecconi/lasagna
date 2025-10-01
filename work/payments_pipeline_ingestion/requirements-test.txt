@@ -21,3 +21,4 @@ mypy>=0.991
 # Documentation
 sphinx>=5.0.0
 sphinx-rtd-theme>=1.0.0
+

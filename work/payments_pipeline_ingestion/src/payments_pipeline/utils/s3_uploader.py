@@ -141,16 +141,20 @@ class S3Uploader:
         
         self.logger.info(f"📁 Uploading payments data from {data_directory}")
         
-        # Find merchant files
+        # Find merchant files and sort by date range
         merchant_files = list(data_path.glob("merchants_*.csv"))
+        merchant_files.sort(key=lambda x: self._extract_date_range(x.name))
+        
         for file_path in merchant_files:
             s3_key = f"payments/{file_path.name}"
             s3_path = self.upload_file(str(file_path), s3_key)
             s3_paths["merchants"].append(s3_path)
             s3_paths["all_files"].append(s3_path)
         
-        # Find transaction files
+        # Find transaction files and sort by date range
         transaction_files = list(data_path.glob("transactions_*.csv"))
+        transaction_files.sort(key=lambda x: self._extract_date_range(x.name))
+        
         for file_path in transaction_files:
             s3_key = f"payments/{file_path.name}"
             s3_path = self.upload_file(str(file_path), s3_key)
@@ -162,6 +166,31 @@ class S3Uploader:
         self.logger.info(f"   Transactions: {len(s3_paths['transactions'])} files")
         
         return s3_paths
+    
+    def _extract_date_range(self, filename: str) -> str:
+        """
+        Extract date range from filename for sorting
+        
+        Args:
+            filename: CSV filename (e.g., "transactions_2024-01-01_2024-01-15.csv")
+            
+        Returns:
+            Date range string for sorting
+        """
+        import re
+        
+        # Extract date range pattern: YYYY-MM-DD_YYYY-MM-DD
+        pattern = r'(\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2})'
+        match = re.search(pattern, filename)
+        
+        if match:
+            return match.group(1)
+        
+        # Fallback for old naming convention
+        if "initial" in filename:
+            return "0000-00-00_0000-00-00"  # Sort initial files first
+        
+        return "9999-99-99_9999-99-99"  # Sort unknown files last
     
     def list_uploaded_files(self, s3_prefix: str = "payments") -> List[str]:
         """
@@ -210,12 +239,16 @@ class S3Uploader:
         
         Args:
             s3_prefix: S3 prefix to clean up
-            keep_days: Number of days to keep files
+            keep_days: Number of days to keep files (0 = delete all)
         """
         import datetime
         
         try:
-            cutoff_date = datetime.datetime.now() - datetime.timedelta(days=keep_days)
+            if keep_days == 0:
+                # Delete all files regardless of age
+                cutoff_date = datetime.datetime.now() + datetime.timedelta(days=1)
+            else:
+                cutoff_date = datetime.datetime.now() - datetime.timedelta(days=keep_days)
             
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
@@ -233,6 +266,37 @@ class S3Uploader:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to cleanup old files: {e}")
+    
+    def cleanup_database_files(self, database_name: str):
+        """
+        Clean up raw data files for a specific database, preserving Iceberg metadata
+        
+        Args:
+            database_name: Name of the database to clean up
+        """
+        try:
+            # Only clean up raw data files, not Iceberg metadata
+            # Look for CSV files in the payments prefix, not the database directory
+            payments_prefix = "payments/"
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=payments_prefix
+            )
+            
+            if 'Contents' in response:
+                files_deleted = 0
+                for obj in response['Contents']:
+                    # Only delete CSV files (raw data), not Iceberg metadata
+                    if obj['Key'].endswith('.csv'):
+                        self.delete_file(obj['Key'])
+                        files_deleted += 1
+                
+                self.logger.info(f"🧹 Cleaned up {files_deleted} raw data files for {database_name}")
+            else:
+                self.logger.info(f"📋 No raw data files found to clean up for {database_name}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to cleanup raw data files: {e}")
 
 
 def main():

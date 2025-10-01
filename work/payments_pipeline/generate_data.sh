@@ -14,6 +14,8 @@ show_usage() {
     echo "  --end-date DATE        End date (YYYY-MM-DD) for initial generation"
     echo "  --date DATE            Specific date (YYYY-MM-DD) for incremental generation"
     echo "  --output-dir DIR       Output directory (default: ./raw_data)"
+    echo "  --debug                Enable debug output"
+    echo "  --force                Skip confirmation prompt"
     echo "  --help                 Show this help message"
     echo ""
     echo "Examples:"
@@ -32,6 +34,8 @@ START_DATE=""
 END_DATE=""
 DATE=""
 OUTPUT_DIR="./raw_data"
+DEBUG=false
+FORCE=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -59,6 +63,14 @@ while [[ $# -gt 0 ]]; do
         --output-dir)
             OUTPUT_DIR="$2"
             shift 2
+            ;;
+        --debug)
+            DEBUG=true
+            shift
+            ;;
+        --force)
+            FORCE=true
+            shift
             ;;
         --help)
             show_usage
@@ -92,11 +104,18 @@ fi
 echo "🔄 Activating virtual environment..."
 source venv/bin/activate
 
+# Set Python to unbuffered output
+export PYTHONUNBUFFERED=1
+
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
 # Build the command
-CMD="python data_generator.py --output-dir $OUTPUT_DIR"
+CMD="python -u new_data_generator.py --output-dir $OUTPUT_DIR -f"
+
+if [ "$DEBUG" = true ]; then
+    CMD="$CMD --debug"
+fi
 
 if [ "$INITIAL" = true ]; then
     CMD="$CMD --initial"
@@ -119,12 +138,14 @@ echo "📋 Command to execute:"
 echo "$CMD"
 echo ""
 
-# Confirmation prompt
-read -p "🤔 Do you want to proceed with data generation? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "❌ Data generation cancelled."
-    exit 0
+# Confirmation prompt (skip if --force is used)
+if [ "$FORCE" = false ]; then
+    read -p "🤔 Do you want to proceed with data generation? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Data generation cancelled."
+        exit 0
+    fi
 fi
 
 echo ""
@@ -144,8 +165,8 @@ if [ $? -eq 0 ]; then
         echo "================"
         
         # Find the generated files
-        MERCHANTS_FILE=$(find "$OUTPUT_DIR" -name "merchants_initial_*.csv" | head -1)
-        TRANSACTIONS_FILE=$(find "$OUTPUT_DIR" -name "transactions_initial_*.csv" | head -1)
+        MERCHANTS_FILE=$(find "$OUTPUT_DIR" -name "merchants_*.csv" | head -1)
+        TRANSACTIONS_FILE=$(find "$OUTPUT_DIR" -name "transactions_*.csv" | head -1)
         
         if [ -f "$MERCHANTS_FILE" ]; then
             merchant_count=$(wc -l < "$MERCHANTS_FILE")

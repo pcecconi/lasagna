@@ -84,8 +84,11 @@ class BronzeIngestionJob:
             mdr_rate DOUBLE,
             size_category STRING,
             creation_date DATE,
+            effective_date DATE,
             status STRING,
             last_transaction_date STRING,
+            version INT,
+            change_type STRING,
             ingestion_timestamp TIMESTAMP,
             source_file STRING,
             bronze_layer_version STRING,
@@ -117,6 +120,8 @@ class BronzeIngestionJob:
             card_type STRING,
             card_issuer STRING,
             card_brand STRING,
+            card_profile_id STRING,
+            card_bin STRING,
             payment_status STRING,
             merchant_id STRING,
             transactional_cost_rate DOUBLE,
@@ -167,6 +172,19 @@ class BronzeIngestionJob:
     def recreate_database(self, database_name="payments_bronze"):
         """Drop and recreate database with proper Iceberg tables"""
         self.logger.info(f"Recreating database: {database_name}")
+        
+        # Drop existing tables first to avoid metadata conflicts
+        try:
+            self.spark.sql(f"DROP TABLE IF EXISTS {self.config.iceberg_catalog}.{database_name}.merchants_raw")
+            self.logger.info(f"Dropped merchants_raw table")
+        except Exception as e:
+            self.logger.info(f"Merchants table doesn't exist, skipping drop: {e}")
+        
+        try:
+            self.spark.sql(f"DROP TABLE IF EXISTS {self.config.iceberg_catalog}.{database_name}.transactions_raw")
+            self.logger.info(f"Dropped transactions_raw table")
+        except Exception as e:
+            self.logger.info(f"Transactions table doesn't exist, skipping drop: {e}")
         
         # Drop existing database (skip if it doesn't exist)
         try:
@@ -324,26 +342,94 @@ class BronzeIngestionJob:
         
         self.logger.info(f"📁 Starting batch ingestion from {data_directory}")
         
-        # Find merchant files
+        # Find merchant files and sort by date range
         merchant_files = list(data_path.glob("merchants_*.csv"))
         if merchant_files:
-            # Use the first merchant file (should be consistent)
+            # Sort merchant files by date range (new naming convention)
+            merchant_files.sort(key=lambda x: self._extract_date_range(x.name))
+            # Use the first merchant file (earliest date range)
             self.ingest_merchants(str(merchant_files[0]))
         
-        # Find transaction files
+        # Find transaction files and sort by date range
         transaction_files = list(data_path.glob("transactions_*.csv"))
         
-        # Process initial transaction file
-        initial_files = [f for f in transaction_files if "initial" in f.name]
-        if initial_files:
-            self.ingest_transactions(str(initial_files[0]))
-        
-        # Process incremental transaction files
-        incremental_files = [f for f in transaction_files if "initial" not in f.name]
-        for file_path in incremental_files:
-            self.ingest_incremental_transactions(str(file_path))
+        if transaction_files:
+            # Sort transaction files by date range for proper ingestion order
+            transaction_files.sort(key=lambda x: self._extract_date_range(x.name))
+            
+            # Process all transaction files in chronological order
+            for file_path in transaction_files:
+                if self._is_initial_file(file_path.name):
+                    self.ingest_transactions(str(file_path))
+                else:
+                    self.ingest_incremental_transactions(str(file_path))
         
         self.logger.info("🎉 Batch ingestion completed")
+    
+    def _extract_date_range(self, filename: str) -> str:
+        """
+        Extract date range from filename for sorting
+        
+        Args:
+            filename: CSV filename (e.g., "transactions_2024-01-01_2024-01-15.csv")
+            
+        Returns:
+            Date range string for sorting
+        """
+        import re
+        
+        # Extract date range pattern: YYYY-MM-DD_YYYY-MM-DD
+        pattern = r'(\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2})'
+        match = re.search(pattern, filename)
+        
+        if match:
+            return match.group(1)
+        
+        # Fallback for old naming convention
+        if "initial" in filename:
+            return "0000-00-00_0000-00-00"  # Sort initial files first
+        
+        return "9999-99-99_9999-99-99"  # Sort unknown files last
+    
+    def _is_initial_file(self, filename: str) -> bool:
+        """
+        Determine if a file is an initial load file
+        
+        Args:
+            filename: CSV filename
+            
+        Returns:
+            True if this is an initial file, False otherwise
+        """
+        # New naming convention: check if it's the first file in chronological order
+        # or if it contains a large date range (likely initial)
+        import re
+        
+        pattern = r'(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})'
+        match = re.search(pattern, filename)
+        
+        if match:
+            start_date = match.group(1)
+            end_date = match.group(2)
+            
+            # If start and end dates are the same, it's likely incremental
+            if start_date == end_date:
+                return False
+            
+            # If it spans multiple days, it's likely initial
+            from datetime import datetime
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                days_diff = (end_dt - start_dt).days
+                
+                # If it spans more than 1 day, consider it initial
+                return days_diff > 1
+            except ValueError:
+                return False
+        
+        # Fallback: check for "initial" in filename (old convention)
+        return "initial" in filename
     
     def validate_ingestion(self, table_name: str) -> Dict[str, any]:
         """

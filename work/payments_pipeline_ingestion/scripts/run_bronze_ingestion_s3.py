@@ -57,28 +57,22 @@ def main():
             file_size = file_path.stat().st_size
             logger.info(f"   {file_path.name} ({file_size:,} bytes)")
         
-        # Check if files are already uploaded to S3
-        logger.info(f"\n📤 Checking S3 for existing files...")
-        existing_files = uploader.list_uploaded_files("payments")
+        # Clean up old S3 files first to avoid confusion
+        logger.info(f"\n🧹 Cleaning up old S3 files...")
+        uploader.cleanup_old_files("payments", keep_days=0)  # Remove all old files
+        uploader.cleanup_database_files("payments_bronze")  # Remove orphaned database metadata
         
-        # Check if we have the required CSV files
-        merchant_files = [f for f in existing_files if "merchants" in f and f.startswith("payments/")]
-        transaction_files = [f for f in existing_files if "transactions" in f and f.startswith("payments/")]
-        
-        if merchant_files and transaction_files:
-            logger.info(f"✅ Found existing CSV files in S3, skipping upload")
-            s3_paths = {
-                "merchants": [f"s3a://warehouse/{f}" for f in merchant_files],
-                "transactions": [f"s3a://warehouse/{f}" for f in transaction_files],
-                "all_files": [f"s3a://warehouse/{f}" for f in existing_files if f.startswith("payments/")]
-            }
-        else:
-            logger.info(f"📤 Uploading files to S3...")
-            s3_paths = uploader.upload_payments_data(data_dir)
+        # Always upload fresh files to ensure we have the latest data
+        logger.info(f"\n📤 Uploading fresh files to S3...")
+        s3_paths = uploader.upload_payments_data(data_dir)
         
         # Initialize bronze ingestion job
         logger.info(f"\n🏗️ Initializing bronze ingestion job...")
         bronze_job = BronzeIngestionJob(config)
+        
+        # Recreate database to avoid orphaned metadata issues
+        logger.info(f"\n🗑️ Recreating database to avoid orphaned metadata...")
+        bronze_job.recreate_database(config.bronze_namespace)
         
         # Run ingestion from S3
         logger.info(f"\n🚀 Starting bronze layer ingestion from S3...")
@@ -91,18 +85,17 @@ def main():
         
         # Ingest transactions
         if s3_paths["transactions"]:
-            # Process initial transaction file
-            initial_files = [path for path in s3_paths["transactions"] if "initial" in path]
-            if initial_files:
-                transaction_s3_path = initial_files[0]
-                logger.info(f"💳 Ingesting initial transactions from {transaction_s3_path}")
-                bronze_job.ingest_transactions(transaction_s3_path)
-            
-            # Process incremental transaction files
-            incremental_files = [path for path in s3_paths["transactions"] if "initial" not in path]
-            for s3_path in incremental_files:
-                logger.info(f"🔄 Ingesting incremental transactions from {s3_path}")
-                bronze_job.ingest_incremental_transactions(s3_path)
+            # Process all transaction files in chronological order
+            for s3_path in s3_paths["transactions"]:
+                # Determine if this is an initial or incremental file
+                filename = s3_path.split('/')[-1]  # Extract filename from S3 path
+                
+                if bronze_job._is_initial_file(filename):
+                    logger.info(f"💳 Ingesting initial transactions from {s3_path}")
+                    bronze_job.ingest_transactions(s3_path)
+                else:
+                    logger.info(f"🔄 Ingesting incremental transactions from {s3_path}")
+                    bronze_job.ingest_incremental_transactions(s3_path)
         
         # Validate results
         logger.info(f"\n🔍 Validating ingestion results...")
@@ -138,11 +131,48 @@ def main():
         except Exception as e:
             logger.error(f"❌ Error showing sample data: {e}")
         
+        # Run comprehensive data quality validation
+        logger.info(f"\n🔍 Running comprehensive data quality validation...")
+        try:
+            from payments_pipeline.bronze.validation import DataQualityValidator
+            
+            validator = DataQualityValidator(spark)
+            
+            # Validate merchants table
+            logger.info("Validating merchants_raw table...")
+            merchants_dq_results = validator.run_comprehensive_validation(f"{config.iceberg_catalog}.{config.bronze_namespace}.merchants_raw")
+            
+            # Validate transactions table
+            logger.info("Validating transactions_raw table...")
+            transactions_dq_results = validator.run_comprehensive_validation(f"{config.iceberg_catalog}.{config.bronze_namespace}.transactions_raw")
+            
+            # Check validation results
+            merchants_passed = merchants_dq_results.get("data_quality", {}).get("overall_passed", False)
+            transactions_passed = transactions_dq_results.get("data_quality", {}).get("overall_passed", False)
+            
+            if merchants_passed and transactions_passed:
+                logger.info("✅ All data quality validations passed!")
+            else:
+                logger.warning("⚠️ Some data quality validations failed:")
+                if not merchants_passed:
+                    logger.warning("   - Merchants validation failed")
+                if not transactions_passed:
+                    logger.warning("   - Transactions validation failed")
+                    
+        except Exception as e:
+            logger.error(f"❌ Data quality validation failed: {e}")
+            logger.warning("⚠️ Proceeding with cleanup despite validation errors...")
+        
         logger.info(f"\n🎉 Bronze layer ingestion completed successfully!")
         logger.info(f"📊 Summary:")
         logger.info(f"   Files uploaded to S3: {len(s3_paths['all_files'])}")
         logger.info(f"   Merchants ingested: {merchants_validation.get('row_count', 0):,}")
         logger.info(f"   Transactions ingested: {transactions_validation.get('row_count', 0):,}")
+        
+        # Clean up S3 files after successful ingestion and validation
+        logger.info(f"\n🧹 Cleaning up S3 files after ingestion...")
+        uploader.cleanup_old_files("payments", keep_days=0)  # Remove all files
+        uploader.cleanup_database_files("payments_bronze")  # Remove database metadata
         
         return 0
         
