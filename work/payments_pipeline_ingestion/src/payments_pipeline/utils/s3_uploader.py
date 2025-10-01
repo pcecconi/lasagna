@@ -122,12 +122,13 @@ class S3Uploader:
         self.logger.info(f"✅ Uploaded {len(s3_paths)} files to S3")
         return s3_paths
     
-    def upload_payments_data(self, data_directory: str) -> dict:
+    def upload_payments_data(self, data_directory: str, files_to_upload: list = None) -> dict:
         """
         Upload payments pipeline data files to S3
         
         Args:
             data_directory: Directory containing payments data files
+            files_to_upload: Optional list of specific files to upload (Path objects)
             
         Returns:
             Dictionary with S3 paths for different file types
@@ -139,22 +140,29 @@ class S3Uploader:
             "all_files": []
         }
         
-        self.logger.info(f"📁 Uploading payments data from {data_directory}")
+        if files_to_upload is None:
+            # Upload all files (backward compatibility)
+            self.logger.info(f"📁 Uploading all payments data from {data_directory}")
+            merchant_files = list(data_path.glob("merchants_*.csv"))
+            transaction_files = list(data_path.glob("transactions_*.csv"))
+        else:
+            # Upload only specified files
+            self.logger.info(f"📁 Uploading {len(files_to_upload)} specified files from {data_directory}")
+            merchant_files = [f for f in files_to_upload if f.name.startswith("merchants_")]
+            transaction_files = [f for f in files_to_upload if f.name.startswith("transactions_")]
         
-        # Find merchant files and sort by date range
-        merchant_files = list(data_path.glob("merchants_*.csv"))
+        # Sort files by date range
         merchant_files.sort(key=lambda x: self._extract_date_range(x.name))
+        transaction_files.sort(key=lambda x: self._extract_date_range(x.name))
         
+        # Upload merchant files
         for file_path in merchant_files:
             s3_key = f"payments/{file_path.name}"
             s3_path = self.upload_file(str(file_path), s3_key)
             s3_paths["merchants"].append(s3_path)
             s3_paths["all_files"].append(s3_path)
         
-        # Find transaction files and sort by date range
-        transaction_files = list(data_path.glob("transactions_*.csv"))
-        transaction_files.sort(key=lambda x: self._extract_date_range(x.name))
-        
+        # Upload transaction files
         for file_path in transaction_files:
             s3_key = f"payments/{file_path.name}"
             s3_path = self.upload_file(str(file_path), s3_key)

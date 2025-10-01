@@ -10,9 +10,9 @@ show_usage() {
     echo "Options:"
     echo "  --initial              Generate initial dataset"
     echo "  --incremental          Generate incremental data"
-    echo "  --start-date DATE      Start date (YYYY-MM-DD) for initial generation"
-    echo "  --end-date DATE        End date (YYYY-MM-DD) for initial generation"
-    echo "  --date DATE            Specific date (YYYY-MM-DD) for incremental generation"
+    echo "  --start-date DATE      Start date (YYYY-MM-DD) for data generation"
+    echo "  --end-date DATE        End date (YYYY-MM-DD) for data generation"
+    echo "  --date DATE            Specific date (YYYY-MM-DD) for single-day incremental (legacy)"
     echo "  --output-dir DIR       Output directory (default: ./raw_data)"
     echo "  --debug                Enable debug output"
     echo "  --force                Skip confirmation prompt"
@@ -20,8 +20,9 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  $0 --initial --start-date 2024-01-01 --end-date 2024-06-30"
-    echo "  $0 --incremental --date 2024-07-01"
-    echo "  $0 --incremental"
+    echo "  $0 --incremental --start-date 2024-07-01 --end-date 2024-07-31"
+    echo "  $0 --incremental --start-date 2024-07-01 --end-date 2024-07-01  # Single day"
+    echo "  $0 --incremental --date 2024-07-01  # Legacy single-day syntax"
     echo ""
     echo "If no parameters are provided, the script will use default values:"
     echo "  --initial --start-date 2024-01-01 --end-date 2024-06-30"
@@ -127,8 +128,15 @@ if [ "$INITIAL" = true ]; then
     fi
 elif [ "$INCREMENTAL" = true ]; then
     CMD="$CMD --incremental"
-    if [ -n "$DATE" ]; then
-        CMD="$CMD --date $DATE"
+    if [ -n "$START_DATE" ]; then
+        CMD="$CMD --start-date $START_DATE"
+    fi
+    if [ -n "$END_DATE" ]; then
+        CMD="$CMD --end-date $END_DATE"
+    fi
+    # Handle legacy --date parameter for backward compatibility
+    if [ -n "$DATE" ] && [ -z "$START_DATE" ] && [ -z "$END_DATE" ]; then
+        CMD="$CMD --start-date $DATE --end-date $DATE"
     fi
 fi
 

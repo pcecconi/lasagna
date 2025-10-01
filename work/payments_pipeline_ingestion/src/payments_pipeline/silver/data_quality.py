@@ -14,6 +14,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, count as spark_count, sum as spark_sum, max as spark_max, min as spark_min
 
 from ..utils.spark import get_spark_session
+from ..utils.config import PipelineConfig
 from ..utils.logging import setup_logging
 
 
@@ -31,6 +32,22 @@ class DataQualityChecker:
     def __init__(self, spark_session: Optional[SparkSession] = None):
         self.logger = setup_logging(__name__)
         self.spark = spark_session or get_spark_session()
+        self.config = PipelineConfig()
+        
+        # Test Spark session connectivity
+        self._test_spark_connectivity()
+    
+    def _test_spark_connectivity(self):
+        """Test if Spark session is working properly"""
+        try:
+            # Simple test query
+            test_result = self.spark.sql("SELECT 1 as test").collect()[0]['test']
+            if test_result != 1:
+                raise Exception("Spark session test failed")
+            self.logger.info("✅ Spark session connectivity verified")
+        except Exception as e:
+            self.logger.error(f"❌ Spark session connectivity test failed: {e}")
+            raise Exception(f"Spark session is not available: {e}")
     
     def run_all_checks(self) -> Dict[str, any]:
         """
@@ -63,7 +80,8 @@ class DataQualityChecker:
             ("duplicate_check", self._check_duplicates),
             ("business_rules", self._check_business_rules),
             ("data_types", self._check_data_types),
-            ("null_values", self._check_null_values)
+            ("null_values", self._check_null_values),
+            ("v2_schema_validation", self._check_v2_schema_validation)
         ]
         
         for check_name, check_func in checks:
@@ -82,13 +100,25 @@ class DataQualityChecker:
                     
             except Exception as e:
                 self.logger.error(f"Error running {check_name}: {e}")
-                results["checks"][check_name] = {
-                    "status": "ERROR",
-                    "message": str(e),
-                    "details": {}
-                }
-                results["summary"]["total_checks"] += 1
-                results["summary"]["failed_checks"] += 1
+                # Check if it's a connectivity issue
+                if "Py4JNetworkError" in str(e) or "Connection refused" in str(e):
+                    self.logger.error("⚠️ Spark connectivity issue detected. Skipping remaining checks.")
+                    results["checks"][check_name] = {
+                        "status": "ERROR",
+                        "message": f"Spark connectivity issue: {str(e)}",
+                        "details": {"error_type": "connectivity"}
+                    }
+                    results["summary"]["total_checks"] += 1
+                    results["summary"]["failed_checks"] += 1
+                    break  # Stop running more checks if connectivity is lost
+                else:
+                    results["checks"][check_name] = {
+                        "status": "ERROR",
+                        "message": str(e),
+                        "details": {}
+                    }
+                    results["summary"]["total_checks"] += 1
+                    results["summary"]["failed_checks"] += 1
         
         # Generate summary
         self._log_summary(results["summary"])
@@ -98,14 +128,38 @@ class DataQualityChecker:
     def _check_merchant_completeness(self) -> Dict[str, any]:
         """Check if all bronze merchants appear in silver"""
         try:
-            bronze_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw')
-            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            # Use SQL to avoid large collect() operations
+            bronze_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT merchant_id) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw
+            """).collect()[0]['count']
             
-            bronze_merchant_ids = set([row.merchant_id for row in bronze_merchants.select('merchant_id').distinct().collect()])
-            silver_merchant_ids = set([row.merchant_id for row in silver_merchants.select('merchant_id').distinct().collect()])
+            silver_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT merchant_id) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants
+            """).collect()[0]['count']
             
-            missing_merchants = bronze_merchant_ids - silver_merchant_ids
-            extra_merchants = silver_merchant_ids - bronze_merchant_ids
+            # Check for missing merchants using SQL
+            missing_merchants_df = self.spark.sql(f"""
+                SELECT b.merchant_id
+                FROM {self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw b
+                LEFT JOIN {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants s
+                ON b.merchant_id = s.merchant_id
+                WHERE s.merchant_id IS NULL
+                LIMIT 10
+            """)
+            missing_merchants = [row.merchant_id for row in missing_merchants_df.collect()]
+            
+            # Check for extra merchants using SQL
+            extra_merchants_df = self.spark.sql(f"""
+                SELECT s.merchant_id
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants s
+                LEFT JOIN {self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw b
+                ON s.merchant_id = b.merchant_id
+                WHERE b.merchant_id IS NULL
+                LIMIT 10
+            """)
+            extra_merchants = [row.merchant_id for row in extra_merchants_df.collect()]
             
             status = "PASS"
             message = "All bronze merchants present in silver"
@@ -121,12 +175,12 @@ class DataQualityChecker:
                 "status": status,
                 "message": message,
                 "details": {
-                    "bronze_merchants": len(bronze_merchant_ids),
-                    "silver_merchants": len(silver_merchant_ids),
+                    "bronze_merchants": bronze_count,
+                    "silver_merchants": silver_count,
                     "missing_merchants": len(missing_merchants),
                     "extra_merchants": len(extra_merchants),
-                    "missing_merchant_ids": list(missing_merchants)[:10] if missing_merchants else [],
-                    "extra_merchant_ids": list(extra_merchants)[:10] if extra_merchants else []
+                    "missing_merchant_ids": missing_merchants,
+                    "extra_merchant_ids": extra_merchants
                 }
             }
             
@@ -140,14 +194,38 @@ class DataQualityChecker:
     def _check_transaction_completeness(self) -> Dict[str, any]:
         """Check if all bronze transactions appear in silver"""
         try:
-            bronze_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw')
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            # Use SQL to avoid large collect() operations
+            bronze_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT payment_id) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw
+            """).collect()[0]['count']
             
-            bronze_payment_ids = set([row.payment_id for row in bronze_payments.select('payment_id').distinct().collect()])
-            silver_payment_ids = set([row.payment_id for row in silver_payments.select('payment_id').distinct().collect()])
+            silver_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT payment_id) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
+            """).collect()[0]['count']
             
-            missing_payments = bronze_payment_ids - silver_payment_ids
-            extra_payments = silver_payment_ids - bronze_payment_ids
+            # Check for missing payments using SQL
+            missing_payments_df = self.spark.sql(f"""
+                SELECT b.payment_id
+                FROM {self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw b
+                LEFT JOIN {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments s
+                ON b.payment_id = s.payment_id
+                WHERE s.payment_id IS NULL
+                LIMIT 10
+            """)
+            missing_payments = [row.payment_id for row in missing_payments_df.collect()]
+            
+            # Check for extra payments using SQL
+            extra_payments_df = self.spark.sql(f"""
+                SELECT s.payment_id
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments s
+                LEFT JOIN {self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw b
+                ON s.payment_id = b.payment_id
+                WHERE b.payment_id IS NULL
+                LIMIT 10
+            """)
+            extra_payments = [row.payment_id for row in extra_payments_df.collect()]
             
             status = "PASS"
             message = "All bronze payments present in silver"
@@ -163,12 +241,12 @@ class DataQualityChecker:
                 "status": status,
                 "message": message,
                 "details": {
-                    "bronze_payments": len(bronze_payment_ids),
-                    "silver_payments": len(silver_payment_ids),
+                    "bronze_payments": bronze_count,
+                    "silver_payments": silver_count,
                     "missing_payments": len(missing_payments),
                     "extra_payments": len(extra_payments),
-                    "missing_payment_ids": list(missing_payments)[:10] if missing_payments else [],
-                    "extra_payment_ids": list(extra_payments)[:10] if extra_payments else []
+                    "missing_payment_ids": missing_payments,
+                    "extra_payment_ids": extra_payments
                 }
             }
             
@@ -182,7 +260,7 @@ class DataQualityChecker:
     def _check_referential_integrity(self) -> Dict[str, any]:
         """Check if all payments have merchant_sk"""
         try:
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             payments_without_merchant_sk = silver_payments.filter('merchant_sk IS NULL').count()
             total_payments = silver_payments.count()
@@ -210,13 +288,27 @@ class DataQualityChecker:
     def _check_foreign_key_integrity(self) -> Dict[str, any]:
         """Check if all merchant_sk values exist in dim_merchants"""
         try:
-            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            # Use SQL to avoid large collect() operations
+            dim_merchant_sk_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT merchant_sk) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants
+            """).collect()[0]['count']
             
-            silver_merchant_sks = set([row.merchant_sk for row in silver_merchants.select('merchant_sk').distinct().collect()])
-            payment_merchant_sks = set([row.merchant_sk for row in silver_payments.select('merchant_sk').distinct().collect()])
+            fact_merchant_sk_count = self.spark.sql(f"""
+                SELECT COUNT(DISTINCT merchant_sk) as count 
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
+            """).collect()[0]['count']
             
-            orphaned_merchant_sks = payment_merchant_sks - silver_merchant_sks
+            # Check for orphaned merchant_sk using SQL
+            orphaned_merchant_sks_df = self.spark.sql(f"""
+                SELECT DISTINCT f.merchant_sk
+                FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments f
+                LEFT JOIN {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants d
+                ON f.merchant_sk = d.merchant_sk
+                WHERE d.merchant_sk IS NULL AND f.merchant_sk IS NOT NULL
+                LIMIT 10
+            """)
+            orphaned_merchant_sks = [row.merchant_sk for row in orphaned_merchant_sks_df.collect()]
             
             status = "PASS" if len(orphaned_merchant_sks) == 0 else "FAIL"
             message = "All payment merchant_sk exist in dim_merchants" if len(orphaned_merchant_sks) == 0 else f"{len(orphaned_merchant_sks)} orphaned merchant_sk"
@@ -225,10 +317,10 @@ class DataQualityChecker:
                 "status": status,
                 "message": message,
                 "details": {
-                    "unique_merchant_sks_in_dim": len(silver_merchant_sks),
-                    "unique_merchant_sks_in_fact": len(payment_merchant_sks),
+                    "unique_merchant_sks_in_dim": dim_merchant_sk_count,
+                    "unique_merchant_sks_in_fact": fact_merchant_sk_count,
                     "orphaned_merchant_sks": len(orphaned_merchant_sks),
-                    "orphaned_merchant_sk_list": list(orphaned_merchant_sks)[:10] if orphaned_merchant_sks else []
+                    "orphaned_merchant_sk_list": orphaned_merchant_sks
                 }
             }
             
@@ -242,8 +334,8 @@ class DataQualityChecker:
     def _check_data_consistency(self) -> Dict[str, any]:
         """Check if payment amounts are consistent between bronze and silver"""
         try:
-            bronze_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw')
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            bronze_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             bronze_total_amount = bronze_payments.agg(spark_sum('payment_amount')).collect()[0][0]
             silver_total_amount = silver_payments.agg(spark_sum('payment_amount')).collect()[0][0]
@@ -275,27 +367,52 @@ class DataQualityChecker:
     def _check_scd_type2_integrity(self) -> Dict[str, any]:
         """Check SCD Type 2 integrity"""
         try:
-            scd_check = self.spark.sql('''
+            # Check 1: Merchants with 0 or more than 1 current record
+            current_record_issues = self.spark.sql(f'''
             SELECT 
                 merchant_id,
                 COUNT(*) as version_count,
                 SUM(CASE WHEN is_current = true THEN 1 ELSE 0 END) as current_count
             FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants
             GROUP BY merchant_id
-            HAVING COUNT(*) > 1 OR SUM(CASE WHEN is_current = true THEN 1 ELSE 0 END) != 1
+            HAVING SUM(CASE WHEN is_current = true THEN 1 ELSE 0 END) != 1
             ''')
             
-            scd_issues = scd_check.count()
+            current_record_count = current_record_issues.count()
             
-            status = "PASS" if scd_issues == 0 else "FAIL"
-            message = "SCD Type 2 integrity maintained" if scd_issues == 0 else f"{scd_issues} merchants with SCD issues"
+            # Check 2: Merchants with overlapping effective/expiry date ranges (for non-current records)
+            overlapping_dates = self.spark.sql(f'''
+            SELECT DISTINCT a.merchant_id
+            FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants a
+            JOIN {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants b
+            ON a.merchant_id = b.merchant_id 
+            AND a.merchant_sk != b.merchant_sk
+            AND a.is_current = false 
+            AND b.is_current = false
+            WHERE (a.effective_date <= b.effective_date AND a.expiry_date > b.effective_date)
+               OR (b.effective_date <= a.effective_date AND b.expiry_date > a.effective_date)
+            ''')
+            
+            overlapping_count = overlapping_dates.count()
+            
+            total_issues = current_record_count + overlapping_count
+            
+            # Collect examples for debugging
+            current_examples = current_record_issues.limit(3).collect() if current_record_count > 0 else []
+            overlapping_examples = overlapping_dates.limit(3).collect() if overlapping_count > 0 else []
+            
+            status = "PASS" if total_issues == 0 else "FAIL"
+            message = "SCD Type 2 integrity maintained" if total_issues == 0 else f"{total_issues} merchants with SCD issues"
             
             return {
                 "status": status,
                 "message": message,
                 "details": {
-                    "merchants_with_scd_issues": scd_issues,
-                    "scd_issues": scd_check.collect() if scd_issues > 0 else []
+                    "current_record_issues": current_record_count,
+                    "overlapping_date_issues": overlapping_count,
+                    "total_scd_issues": total_issues,
+                    "current_record_examples": [{"merchant_id": row.merchant_id, "version_count": row.version_count, "current_count": row.current_count} for row in current_examples],
+                    "overlapping_date_examples": [{"merchant_id": row.merchant_id} for row in overlapping_examples]
                 }
             }
             
@@ -309,7 +426,7 @@ class DataQualityChecker:
     def _check_duplicates(self) -> Dict[str, any]:
         """Check for duplicate payment_ids"""
         try:
-            duplicate_payments = self.spark.sql('''
+            duplicate_payments = self.spark.sql(f'''
             SELECT payment_id, COUNT(*) as count
             FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
             GROUP BY payment_id
@@ -317,6 +434,9 @@ class DataQualityChecker:
             ''')
             
             duplicate_count = duplicate_payments.count()
+            
+            # Only collect a few examples to avoid large data transfer
+            duplicate_examples = duplicate_payments.limit(5).collect() if duplicate_count > 0 else []
             
             status = "PASS" if duplicate_count == 0 else "FAIL"
             message = "No duplicate payment_ids" if duplicate_count == 0 else f"{duplicate_count} duplicate payment_ids"
@@ -326,7 +446,7 @@ class DataQualityChecker:
                 "message": message,
                 "details": {
                     "duplicate_count": duplicate_count,
-                    "duplicates": duplicate_payments.collect() if duplicate_count > 0 else []
+                    "duplicates": [{"payment_id": row.payment_id, "count": row.count} for row in duplicate_examples]
                 }
             }
             
@@ -340,8 +460,8 @@ class DataQualityChecker:
     def _check_business_rules(self) -> Dict[str, any]:
         """Check business rule validations"""
         try:
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
-            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             issues = []
             
@@ -388,8 +508,8 @@ class DataQualityChecker:
     def _check_data_types(self) -> Dict[str, any]:
         """Check data type consistency"""
         try:
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
-            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             # Check for type mismatches
             issues = []
@@ -429,8 +549,8 @@ class DataQualityChecker:
     def _check_null_values(self) -> Dict[str, any]:
         """Check for unexpected null values"""
         try:
-            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
-            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             issues = []
             
@@ -441,8 +561,24 @@ class DataQualityChecker:
                 if null_count > 0:
                     issues.append(f"{null_count} null values in payments.{field}")
             
+            # Check V2 payment fields (these can be null, but we'll track them)
+            v2_payment_fields = ["card_profile_id", "card_bin"]
+            for field in v2_payment_fields:
+                null_count = silver_payments.filter(col(field).isNull()).count()
+                total_count = silver_payments.count()
+                null_percentage = (null_count / total_count * 100) if total_count > 0 else 0
+                if null_percentage > 50:  # Warn if more than 50% are null
+                    issues.append(f"{null_count} ({null_percentage:.1f}%) null values in payments.{field}")
+            
             critical_merchant_fields = ["merchant_id", "merchant_name", "mdr_rate"]
             for field in critical_merchant_fields:
+                null_count = silver_merchants.filter(col(field).isNull()).count()
+                if null_count > 0:
+                    issues.append(f"{null_count} null values in merchants.{field}")
+            
+            # Check V2 merchant fields
+            v2_merchant_fields = ["version", "change_type"]
+            for field in v2_merchant_fields:
                 null_count = silver_merchants.filter(col(field).isNull()).count()
                 if null_count > 0:
                     issues.append(f"{null_count} null values in merchants.{field}")
@@ -462,6 +598,85 @@ class DataQualityChecker:
             return {
                 "status": "ERROR",
                 "message": f"Error checking null values: {e}",
+                "details": {}
+            }
+    
+    def _check_v2_schema_validation(self) -> Dict[str, any]:
+        """Check V2 schema validation for new columns"""
+        try:
+            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            silver_payments = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            
+            issues = []
+            
+            # Check V2 columns exist in dim_merchants
+            merchant_columns = [field.name for field in silver_merchants.schema.fields]
+            required_merchant_v2_columns = ['version', 'change_type']
+            for col_name in required_merchant_v2_columns:
+                if col_name not in merchant_columns:
+                    issues.append(f"Missing V2 column 'version' in dim_merchants")
+            
+            # Check V2 columns exist in fact_payments
+            payment_columns = [field.name for field in silver_payments.schema.fields]
+            required_payment_v2_columns = ['card_profile_id', 'card_bin']
+            for col_name in required_payment_v2_columns:
+                if col_name not in payment_columns:
+                    issues.append(f"Missing V2 column '{col_name}' in fact_payments")
+            
+            # Check version column values are positive integers
+            if 'version' in merchant_columns:
+                invalid_versions = silver_merchants.filter(
+                    (col("version").isNull()) | (col("version") <= 0)
+                ).count()
+                if invalid_versions > 0:
+                    issues.append(f"{invalid_versions} merchants with invalid version values")
+            
+            # Check change_type column has valid values
+            if 'change_type' in merchant_columns:
+                valid_change_types = ['initial', 'attribute_change', 'missing_merchant']
+                invalid_change_types = silver_merchants.filter(
+                    ~col("change_type").isin(valid_change_types)
+                ).count()
+                if invalid_change_types > 0:
+                    issues.append(f"{invalid_change_types} merchants with invalid change_type values")
+            
+            # Check card_profile_id format (should be like CARD123456)
+            if 'card_profile_id' in payment_columns:
+                invalid_card_profiles = silver_payments.filter(
+                    (col("card_profile_id").isNotNull()) & 
+                    (~col("card_profile_id").rlike("^CARD[0-9]{6}$"))
+                ).count()
+                if invalid_card_profiles > 0:
+                    issues.append(f"{invalid_card_profiles} payments with invalid card_profile_id format")
+            
+            # Check card_bin format (should be 6 digits)
+            if 'card_bin' in payment_columns:
+                invalid_card_bins = silver_payments.filter(
+                    (col("card_bin").isNotNull()) & 
+                    (~col("card_bin").rlike("^[0-9]{6}$"))
+                ).count()
+                if invalid_card_bins > 0:
+                    issues.append(f"{invalid_card_bins} payments with invalid card_bin format")
+            
+            status = "PASS" if len(issues) == 0 else "FAIL"
+            message = "V2 schema validation passed" if len(issues) == 0 else f"V2 schema issues: {', '.join(issues)}"
+            
+            return {
+                "status": status,
+                "message": message,
+                "details": {
+                    "issues": issues,
+                    "merchant_v2_columns": [col for col in required_merchant_v2_columns if col in merchant_columns],
+                    "payment_v2_columns": [col for col in required_payment_v2_columns if col in payment_columns],
+                    "total_merchants": silver_merchants.count(),
+                    "total_payments": silver_payments.count()
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "status": "ERROR",
+                "message": f"Error checking V2 schema validation: {e}",
                 "details": {}
             }
     

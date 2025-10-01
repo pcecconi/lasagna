@@ -7,6 +7,7 @@ Orchestrates the complete silver layer pipeline.
 """
 
 import logging
+import sys
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -49,14 +50,16 @@ class SilverIngestionJob:
     def run_complete_silver_pipeline(self, 
                                    bronze_merchants_df: DataFrame,
                                    bronze_payments_df: DataFrame,
-                                   processing_window: str = "daily") -> bool:
+                                   processing_window: str = "daily",
+                                   historical_mode: bool = False) -> bool:
         """
         Run complete silver layer pipeline
         
         Args:
             bronze_merchants_df: Merchant data from bronze layer
             bronze_payments_df: Payment data from bronze layer
-            processing_window: Processing window ("daily", "weekly", "monthly")
+            processing_window: Processing window ("daily", "weekly", "monthly", "historical")
+            historical_mode: If True, process all data without date filtering
             
         Returns:
             bool: True if pipeline succeeded, False otherwise
@@ -72,10 +75,18 @@ class SilverIngestionJob:
             
             # Step 2: Update payments with window-based processing
             self.logger.info("💳 Processing payments...")
-            date_range = self._get_processing_window(processing_window)
-            if not self.atomic_updater.atomic_update_payments(bronze_payments_df, date_range):
-                self.logger.error("❌ Payment processing failed")
-                return False
+            if historical_mode or processing_window == "historical":
+                # For historical data, process all data without date filtering
+                self.logger.info("📅 Historical mode: processing all data without date filtering")
+                if not self.atomic_updater.atomic_update_payments_historical(bronze_payments_df):
+                    self.logger.error("❌ Payment processing failed")
+                    return False
+            else:
+                # For incremental updates, use date window filtering
+                date_range = self._get_processing_window(processing_window)
+                if not self.atomic_updater.atomic_update_payments(bronze_payments_df, date_range):
+                    self.logger.error("❌ Payment processing failed")
+                    return False
             
             # Step 3: Run comprehensive data quality checks
             self.logger.info("🔍 Running data quality checks...")
@@ -120,6 +131,11 @@ class SilverIngestionJob:
             # Process last 90 days
             start_date = current_date - timedelta(days=90)
             end_date = current_date
+        elif window_type == "historical":
+            # For historical processing, return a very wide range
+            # This should not be used in practice as historical_mode should be used instead
+            start_date = date(1900, 1, 1)
+            end_date = date(2100, 12, 31)
         else:
             raise ValueError(f"Unknown processing window: {window_type}")
         
@@ -191,6 +207,17 @@ class SilverIngestionJob:
             bronze_payments_df, 
             "monthly"
         )
+    
+    def run_historical_processing(self, 
+                                bronze_merchants_df: DataFrame,
+                                bronze_payments_df: DataFrame) -> bool:
+        """Run historical data processing (no date filtering)"""
+        return self.run_complete_silver_pipeline(
+            bronze_merchants_df, 
+            bronze_payments_df, 
+            "historical",
+            historical_mode=True
+        )
 
 
 def main():
@@ -200,8 +227,10 @@ def main():
     parser = argparse.ArgumentParser(description='Silver Layer Ingestion Job')
     parser.add_argument('--bronze-merchants', help='Path to bronze merchants data')
     parser.add_argument('--bronze-payments', help='Path to bronze payments data')
-    parser.add_argument('--processing-window', choices=['daily', 'weekly', 'monthly'], 
+    parser.add_argument('--processing-window', choices=['daily', 'weekly', 'monthly', 'historical'], 
                        default='daily', help='Processing window')
+    parser.add_argument('--historical-mode', action='store_true', 
+                       help='Process all data without date filtering (for historical data)')
     parser.add_argument('--stats', action='store_true', help='Show silver layer statistics')
     parser.add_argument('--data-quality', action='store_true', help='Run data quality checks only')
     parser.add_argument('--dq-output', help='Output file for data quality results (JSON)')
@@ -261,7 +290,8 @@ def main():
     success = job.run_complete_silver_pipeline(
         bronze_merchants_df,
         bronze_payments_df,
-        args.processing_window
+        args.processing_window,
+        args.historical_mode
     )
     
     if success:

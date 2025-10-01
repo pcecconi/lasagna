@@ -164,7 +164,9 @@ class PaymentsDataGeneratorV2:
             'effective_date': creation_date,
             'status': 'active',
             'last_transaction_date': None,
-            'version': 1
+            'version': 1,
+            'change_type': 'initial',
+            'churn_date': None
         }
         
         # Debug output removed for verbosity - only show counts
@@ -205,6 +207,15 @@ class PaymentsDataGeneratorV2:
         current_merchant = self.get_current_merchant(merchant_id)
         if not current_merchant:
             raise ValueError(f"Merchant {merchant_id} not found")
+        
+        # Ensure effective_date is different from current version's effective_date
+        # If they're the same, increment by 1 day to avoid SCD Type 2 overlap
+        current_effective_date = current_merchant['effective_date']
+        if isinstance(current_effective_date, str):
+            current_effective_date = datetime.strptime(current_effective_date, '%Y-%m-%d').date()
+        
+        if effective_date == current_effective_date:
+            effective_date = effective_date + timedelta(days=1)
         
         # Create updated merchant
         updated_merchant = current_merchant.copy()
@@ -257,6 +268,9 @@ class PaymentsDataGeneratorV2:
                 if changes:
                     update = self.generate_merchant_update(merchant_id, current_date, changes)
                     update['change_type'] = 'attribute_change'
+                    # Ensure churn_date is None for attribute changes (not churned)
+                    if 'churn_date' not in update:
+                        update['churn_date'] = None
                     updates.append(update)
                     self.add_merchant_to_state(update)
             
@@ -719,69 +733,90 @@ class PaymentsDataGeneratorV2:
         print(f"✅ Completed generating {count} merchants")
         return merchants
 
-    def generate_incremental_data(self, target_date: date = None, auto_confirm: bool = False):
-        """Generate incremental data for a specific date"""
-        if target_date is None:
-            target_date = date.today() - timedelta(days=1)  # Default to yesterday
+    def generate_incremental_data(self, start_date: date, end_date: date, auto_confirm: bool = False):
+        """Generate incremental data for a date range"""
+        if not start_date or not end_date:
+            raise ValueError("Incremental mode requires start_date and end_date")
         
-        if not self.confirm_generation("Incremental", target_date, target_date, auto_confirm):
+        if not self.confirm_generation("Incremental", start_date, end_date, auto_confirm):
             print("❌ Generation cancelled by user")
             return
         
-        print(f"🔄 Generating incremental data for {target_date}")
+        print(f"🔄 Generating incremental data from {start_date} to {end_date}")
         
-        # Check if it's the first day of month (merchant changes)
-        if target_date.day == 1:
-            print("🔄 Processing monthly merchant changes...")
-            new_merchants, churned_merchants = self.process_merchant_changes(target_date)
-            print(f"✅ Added {len(new_merchants)} new merchants, churned {len(churned_merchants)} merchants")
+        # Generate data for each day in the range
+        current_date = start_date
+        total_transactions = 0
+        all_transactions = []
+        all_merchants = set()  # Use set to track unique merchants
         
-        # Generate merchant updates
-        print("🔄 Generating merchant updates...")
-        merchant_updates = self.generate_merchant_updates(target_date, target_date)
-        if merchant_updates:
-            print(f"✅ Generated {len(merchant_updates)} merchant updates")
-        else:
-            print("✅ No merchant updates needed")
-        
-        # Generate transactions for the day
-        print("🔄 Generating daily transactions...")
-        daily_transactions = self.generate_daily_transactions(target_date)
-        print(f"✅ Generated {len(daily_transactions)} transactions")
+        while current_date <= end_date:
+            print(f"📅 Processing {current_date}...")
+            
+            # Check if it's the first day of month (merchant changes)
+            if current_date.day == 1:
+                print("   🔄 Processing monthly merchant changes...")
+                new_merchants, churned_merchants = self.process_merchant_changes(current_date)
+                print(f"   ✅ Added {len(new_merchants)} new merchants, churned {len(churned_merchants)} merchants")
+            
+            # Generate merchant updates for this day
+            print(f"   🔄 Generating merchant updates for {current_date}...")
+            merchant_updates = self.generate_merchant_updates(current_date, current_date)
+            if merchant_updates:
+                print(f"   ✅ Generated {len(merchant_updates)} merchant updates")
+            else:
+                print(f"   ✅ No merchant updates needed for {current_date}")
+            
+            # Generate transactions for the day
+            print(f"   🔄 Generating daily transactions for {current_date}...")
+            daily_transactions = self.generate_daily_transactions(current_date)
+            all_transactions.extend(daily_transactions)
+            total_transactions += len(daily_transactions)
+            print(f"   ✅ Generated {len(daily_transactions)} transactions (Total: {total_transactions:,})")
+            
+            # Track merchants that had activity
+            for transaction in daily_transactions:
+                all_merchants.add(transaction['merchant_id'])
+            
+            current_date += timedelta(days=1)
         
         # Collect merchant records for the period
         print("🔄 Collecting merchant records...")
-        merchants = self.get_merchants_for_period(target_date, target_date)
+        merchants = self.get_merchants_for_period(start_date, end_date)
         print(f"✅ Collected {len(merchants)} merchant records")
         
         # Save files
         print("🔄 Saving data files...")
-        self.save_data_files(target_date, target_date, merchants, daily_transactions)
+        self.save_data_files(start_date, end_date, merchants, all_transactions)
         print("✅ Data files saved")
         
         # Update state
         print("🔄 Updating state...")
-        self.state['last_generated_date'] = target_date
+        self.state['last_generated_date'] = end_date
         self.state['transaction_counter'] = self.transaction_counter
         self.save_state()
         print("✅ State updated")
         
         print(f"🎉 Incremental data generation complete!")
         print(f"   📊 Merchants: {len(merchants)}")
-        print(f"   💳 Transactions: {len(daily_transactions)}")
+        print(f"   💳 Transactions: {total_transactions}")
+        print(f"   📅 Date range: {start_date} to {end_date}")
 
     def get_merchants_for_period(self, start_date: date, end_date: date) -> List[Dict]:
-        """Get current merchant records for a period (only the latest version of each merchant)"""
+        """Get all merchant records for a period (including historical versions)"""
         merchants = []
         
-        # Get the current version of each merchant that was active during this period
+        # Get all versions of each merchant that were effective during this period
         for merchant_id, history in self.state['merchants'].items():
-            current_merchant = self.get_current_merchant(merchant_id)
-            if current_merchant and current_merchant['status'] == 'active':
-                # Check if merchant was active during this period
-                if self.is_merchant_active_on_date(current_merchant, start_date) or \
-                   self.is_merchant_active_on_date(current_merchant, end_date):
-                    merchants.append(current_merchant)
+            for merchant_version in history:
+                # Check if this version was effective during the period
+                effective_date = merchant_version['effective_date']
+                if isinstance(effective_date, str):
+                    effective_date = datetime.strptime(effective_date, '%Y-%m-%d').date()
+                
+                # Include if effective date is within the period
+                if start_date <= effective_date <= end_date:
+                    merchants.append(merchant_version)
         
         return merchants
 
@@ -840,14 +875,26 @@ class PaymentsDataGeneratorV2:
     def save_merchants_to_csv(self, merchants: List[Dict], file_path: Path):
         """Save merchants to CSV file"""
         if merchants:
+            # Ensure all merchants have the required columns
+            for merchant in merchants:
+                if 'change_type' not in merchant:
+                    merchant['change_type'] = None
+                if 'churn_date' not in merchant:
+                    merchant['churn_date'] = None
+                # Convert None values to empty string for CSV compatibility
+                if merchant['change_type'] is None:
+                    merchant['change_type'] = ''
+                if merchant['churn_date'] is None:
+                    merchant['churn_date'] = ''
+            
             merchants_df = pd.DataFrame(merchants)
-            merchants_df.to_csv(file_path, index=False)
+            merchants_df.to_csv(file_path, index=False, na_rep='')
         else:
             # Create empty file with headers
             empty_df = pd.DataFrame(columns=[
                 'merchant_id', 'merchant_name', 'industry', 'address', 'city', 'state',
                 'zip_code', 'phone', 'email', 'mdr_rate', 'size_category', 'creation_date',
-                'effective_date', 'status', 'last_transaction_date', 'version'
+                'effective_date', 'status', 'last_transaction_date', 'version', 'change_type', 'churn_date'
             ])
             empty_df.to_csv(file_path, index=False)
     
@@ -884,24 +931,20 @@ def main():
     # Initialize generator
     generator = PaymentsDataGeneratorV2(output_dir=args.output_dir, debug=args.debug)
     
+    if not args.start_date or not args.end_date:
+        print("❌ Initial generation requires --start-date and --end-date")
+        return
+    
+    start_date = datetime.strptime(args.start_date, '%Y-%m-%d').date()
+    end_date = datetime.strptime(args.end_date, '%Y-%m-%d').date()
+
     if args.initial:
-        if not args.start_date or not args.end_date:
-            print("❌ Initial generation requires --start-date and --end-date")
-            return
-        
-        start_date = datetime.strptime(args.start_date, '%Y-%m-%d').date()
-        end_date = datetime.strptime(args.end_date, '%Y-%m-%d').date()
         
         generator.generate_initial_data(start_date, end_date, auto_confirm=args.force)
     
     elif args.incremental:
-        if args.date:
-            target_date = datetime.strptime(args.date, '%Y-%m-%d').date()
-        else:
-            # Default to yesterday
-            target_date = date.today() - timedelta(days=1)
         
-        generator.generate_incremental_data(target_date, auto_confirm=args.force)
+        generator.generate_incremental_data(start_date, end_date, auto_confirm=args.force)
     
     else:
         print("❌ Please specify --initial or --incremental")

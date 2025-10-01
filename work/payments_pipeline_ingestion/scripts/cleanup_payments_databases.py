@@ -25,36 +25,39 @@ from payments_pipeline.utils.spark import get_spark_session
 
 
 def cleanup_database(spark, db_name, force=False):
-    """Clean up a specific database using safe Spark SQL operations"""
+    """Clean up a specific database using proper Spark SQL operations with Iceberg catalog"""
     try:
         print(f"Cleaning up database: {db_name}")
         
+        # Use the same Iceberg catalog as the ingestion process
+        iceberg_catalog = "iceberg"
+        
         # List tables in the database
         try:
-            tables_df = spark.sql(f'SHOW TABLES IN {db_name}')
+            tables_df = spark.sql(f'SHOW TABLES IN {iceberg_catalog}.{db_name}')
             tables = [row[1] for row in tables_df.collect()]  # Use index for table name
             print(f"  Found {len(tables)} tables to drop: {tables}")
         except Exception as e:
-            print(f"  ⚠️ Could not list tables in {db_name}: {e}")
+            print(f"  ⚠️ Could not list tables in {iceberg_catalog}.{db_name}: {e}")
             tables = []
         
         # Drop all tables first
         for table_name in tables:
-            print(f"    Dropping table: {db_name}.{table_name}")
+            print(f"    Dropping table: {iceberg_catalog}.{db_name}.{table_name}")
             try:
-                spark.sql(f'DROP TABLE IF EXISTS {db_name}.{table_name}')
-                print(f"      ✅ Successfully dropped {db_name}.{table_name}")
+                spark.sql(f'DROP TABLE IF EXISTS {iceberg_catalog}.{db_name}.{table_name}')
+                print(f"      ✅ Successfully dropped {iceberg_catalog}.{db_name}.{table_name}")
             except Exception as e:
-                print(f"      ⚠️ Failed to drop {db_name}.{table_name}: {e}")
+                print(f"      ⚠️ Failed to drop {iceberg_catalog}.{db_name}.{table_name}: {e}")
         
         # Drop the database using CASCADE
-        print(f"  Dropping database: {db_name}")
+        print(f"  Dropping database: {iceberg_catalog}.{db_name}")
         try:
-            spark.sql(f'DROP DATABASE IF EXISTS {db_name} CASCADE')
-            print(f"  ✅ Successfully dropped database: {db_name}")
+            spark.sql(f'DROP DATABASE IF EXISTS {iceberg_catalog}.{db_name} CASCADE')
+            print(f"  ✅ Successfully dropped database: {iceberg_catalog}.{db_name}")
             return True
         except Exception as e:
-            print(f"  ❌ Failed to drop database {db_name}: {e}")
+            print(f"  ❌ Failed to drop database {iceberg_catalog}.{db_name}: {e}")
             return False
         
     except Exception as e:
@@ -90,8 +93,9 @@ def main():
     else:
         databases_to_clean = ['payments_bronze', 'payments_silver', 'payments_silver_staging']
     
-    # Check which databases actually exist
-    existing_databases = spark.sql('SHOW DATABASES').collect()
+    # Check which databases actually exist in the Iceberg catalog
+    iceberg_catalog = "iceberg"
+    existing_databases = spark.sql(f'SHOW NAMESPACES IN {iceberg_catalog}').collect()
     existing_db_names = [row[0] for row in existing_databases]  # Use index instead of column name
     
     databases_to_clean = [db for db in databases_to_clean if db in existing_db_names]

@@ -71,7 +71,7 @@ class BronzeIngestionJob:
         self.logger.info("Creating merchants_raw table...")
         
         create_table_sql = f"""
-        CREATE OR REPLACE TABLE {self.config.iceberg_catalog}.{database_name}.merchants_raw (
+        CREATE TABLE IF NOT EXISTS {self.config.iceberg_catalog}.{database_name}.merchants_raw (
             merchant_id STRING,
             merchant_name STRING,
             industry STRING,
@@ -89,6 +89,7 @@ class BronzeIngestionJob:
             last_transaction_date STRING,
             version INT,
             change_type STRING,
+            churn_date DATE,
             ingestion_timestamp TIMESTAMP,
             source_file STRING,
             bronze_layer_version STRING,
@@ -109,7 +110,7 @@ class BronzeIngestionJob:
         self.logger.info("Creating transactions_raw table...")
         
         create_table_sql = f"""
-        CREATE OR REPLACE TABLE {self.config.iceberg_catalog}.{database_name}.transactions_raw (
+        CREATE TABLE IF NOT EXISTS {self.config.iceberg_catalog}.{database_name}.transactions_raw (
             payment_id STRING,
             payment_timestamp TIMESTAMP,
             payment_lat DOUBLE,
@@ -224,6 +225,15 @@ class BronzeIngestionJob:
             .option("header", "true") \
             .option("inferSchema", "true") \
             .csv(source_path)
+        
+        # Handle churn_date column - convert empty strings to null and cast to date
+        if 'churn_date' in df.columns:
+            from pyspark.sql.functions import when, col, isnan, isnull
+            df = df.withColumn(
+                "churn_date", 
+                when((col("churn_date") == "") | col("churn_date").isNull(), None)
+                .otherwise(col("churn_date").cast("date"))
+            )
         
         # Add bronze layer metadata
         df_bronze = self._add_bronze_metadata(df, source_path)
