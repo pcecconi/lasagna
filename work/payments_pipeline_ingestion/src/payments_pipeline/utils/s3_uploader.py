@@ -258,7 +258,7 @@ class S3Uploader:
             if 'Contents' in response:
                 files_deleted = 0
                 for obj in response['Contents']:
-                    if obj['LastModified'].replace(tzinfo=None) < cutoff_date:
+                    if obj['LastModified'].replace(tzinfo=None) < cutoff_date and obj['Key'].endswith('.csv'):
                         self.delete_file(obj['Key'])
                         files_deleted += 1
                 
