@@ -75,7 +75,7 @@ echo "=============================================="
 print_status "Checking Docker Compose services..."
 
 # List of required containers
-containers=("minio" "postgres" "hive-metastore" "spark-master" "spark-worker-a" "spark-worker-b" "workspace" "trino")
+containers=("minio" "postgres" "hive-metastore" "spark-master" "spark-worker-a" "workspace" "trino")
 
 # Check all containers
 all_running=true
