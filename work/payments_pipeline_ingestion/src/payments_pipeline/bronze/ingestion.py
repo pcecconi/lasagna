@@ -54,7 +54,7 @@ class BronzeIngestionJob:
         """Set up Iceberg catalog configuration"""
         try:
             # Create the namespace first
-            self.spark.sql("CREATE NAMESPACE IF NOT EXISTS spark_catalog.payments_bronze")
+            self.spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {self.config.iceberg_catalog}.{self.config.bronze_namespace}")
             self.logger.info("✅ Iceberg catalog configured")
         except Exception as e:
             self.logger.warning(f"⚠️ Catalog setup warning: {e}")
@@ -63,7 +63,7 @@ class BronzeIngestionJob:
     def create_database(self, database_name="payments_bronze"):
         """Create database if it doesn't exist"""
         self.logger.info(f"Creating database: {database_name}")
-        self.spark.sql(f"CREATE NAMESPACE IF NOT EXISTS spark_catalog.{database_name}")
+        self.spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {self.config.iceberg_catalog}.{database_name}")
         self.logger.info(f"✅ Database {database_name} created successfully")
     
     def create_merchants_table(self, database_name="payments_bronze"):
@@ -71,7 +71,7 @@ class BronzeIngestionJob:
         self.logger.info("Creating merchants_raw table...")
         
         create_table_sql = f"""
-        CREATE OR REPLACE TABLE spark_catalog.{database_name}.merchants_raw (
+        CREATE OR REPLACE TABLE {self.config.iceberg_catalog}.{database_name}.merchants_raw (
             merchant_id STRING,
             merchant_name STRING,
             industry STRING,
@@ -106,7 +106,7 @@ class BronzeIngestionJob:
         self.logger.info("Creating transactions_raw table...")
         
         create_table_sql = f"""
-        CREATE OR REPLACE TABLE spark_catalog.{database_name}.transactions_raw (
+        CREATE OR REPLACE TABLE {self.config.iceberg_catalog}.{database_name}.transactions_raw (
             payment_id STRING,
             payment_timestamp TIMESTAMP,
             payment_lat DOUBLE,
@@ -144,8 +144,8 @@ class BronzeIngestionJob:
         self.logger.info("Verifying tables...")
         
         # Check table counts
-        merchants_count = self.spark.sql(f"SELECT COUNT(*) FROM spark_catalog.{database_name}.merchants_raw").collect()[0][0]
-        transactions_count = self.spark.sql(f"SELECT COUNT(*) FROM spark_catalog.{database_name}.transactions_raw").collect()[0][0]
+        merchants_count = self.spark.sql(f"SELECT COUNT(*) FROM {self.config.iceberg_catalog}.{database_name}.merchants_raw").collect()[0][0]
+        transactions_count = self.spark.sql(f"SELECT COUNT(*) FROM {self.config.iceberg_catalog}.{database_name}.transactions_raw").collect()[0][0]
         
         self.logger.info(f"✅ merchants_raw: {merchants_count} records")
         self.logger.info(f"✅ transactions_raw: {transactions_count} records")
@@ -157,11 +157,11 @@ class BronzeIngestionJob:
         self.logger.info(f"Dropping database: {database_name}")
         # First drop tables, then database
         try:
-            self.spark.sql(f"DROP TABLE IF EXISTS spark_catalog.{database_name}.merchants_raw")
-            self.spark.sql(f"DROP TABLE IF EXISTS spark_catalog.{database_name}.transactions_raw")
+            self.spark.sql(f"DROP TABLE IF EXISTS {self.config.iceberg_catalog}.{database_name}.merchants_raw")
+            self.spark.sql(f"DROP TABLE IF EXISTS {self.config.iceberg_catalog}.{database_name}.transactions_raw")
         except:
             pass  # Tables might not exist
-        self.spark.sql(f"DROP NAMESPACE IF EXISTS spark_catalog.{database_name}")
+        self.spark.sql(f"DROP NAMESPACE IF EXISTS {self.config.iceberg_catalog}.{database_name}")
         self.logger.info(f"✅ Database {database_name} dropped successfully")
     
     def recreate_database(self, database_name="payments_bronze"):
@@ -182,7 +182,7 @@ class BronzeIngestionJob:
         
         self.logger.info(f"✅ Database {database_name} recreated successfully")
     
-    def ingest_merchants(self, source_path: str, target_table: str = "spark_catalog.payments_bronze.merchants_raw"):
+    def ingest_merchants(self, source_path: str, target_table: str = None):
         """
         Ingest raw merchant data
         
@@ -190,13 +190,16 @@ class BronzeIngestionJob:
             source_path: Path to merchant CSV file
             target_table: Target Iceberg table name
         """
+        if not target_table:
+            target_table = f"{self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw"
+        
         self.logger.info(f"🏪 Ingesting merchants from {source_path}")
         
         # Ensure database exists
-        self.create_database("payments_bronze")
+        self.create_database(self.config.bronze_namespace)
         
         # Create table if it doesn't exist
-        self.create_merchants_table("payments_bronze")
+        self.create_merchants_table(self.config.bronze_namespace)
         
         # Read CSV with schema inference
         df = self.spark.read \
@@ -219,7 +222,7 @@ class BronzeIngestionJob:
         
         return target_table
     
-    def ingest_transactions(self, source_path: str, target_table: str = "spark_catalog.payments_bronze.transactions_raw"):
+    def ingest_transactions(self, source_path: str, target_table: str = None):
         """
         Ingest raw transaction data
         
@@ -227,13 +230,16 @@ class BronzeIngestionJob:
             source_path: Path to transaction CSV file
             target_table: Target Iceberg table name
         """
+        if not target_table:
+            target_table = f"{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw"
+        
         self.logger.info(f"💳 Ingesting transactions from {source_path}")
         
         # Ensure database exists
-        self.create_database("payments_bronze")
+        self.create_database(self.config.bronze_namespace)
         
         # Create table if it doesn't exist
-        self.create_transactions_table("payments_bronze")
+        self.create_transactions_table(self.config.bronze_namespace)
         
         # Read CSV with schema inference
         df = self.spark.read \
@@ -257,7 +263,7 @@ class BronzeIngestionJob:
         
         return target_table
     
-    def ingest_incremental_transactions(self, source_path: str, target_table: str = "spark_catalog.payments_bronze.transactions_raw"):
+    def ingest_incremental_transactions(self, source_path: str, target_table: str = None):
         """
         Ingest incremental transaction data (append mode)
         
@@ -265,6 +271,9 @@ class BronzeIngestionJob:
             source_path: Path to transaction CSV file
             target_table: Target Iceberg table name
         """
+        if not target_table:
+            target_table = f"{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw"
+        
         self.logger.info(f"🔄 Ingesting incremental transactions from {source_path}")
         
         # Read CSV with schema inference
@@ -443,8 +452,8 @@ def main():
         
         # Validate if requested
         if args.validate:
-            job.validate_ingestion("spark_catalog.payments_bronze.merchants_raw")
-            job.validate_ingestion("spark_catalog.payments_bronze.transactions_raw")
+            job.validate_ingestion(f"{job.config.iceberg_catalog}.{job.config.bronze_namespace}.merchants_raw")
+            job.validate_ingestion(f"{job.config.iceberg_catalog}.{job.config.bronze_namespace}.transactions_raw")
         
         # Cleanup if requested
         if args.cleanup:

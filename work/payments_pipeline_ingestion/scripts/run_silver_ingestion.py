@@ -14,11 +14,15 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 
 from payments_pipeline.silver.silver_ingestion import SilverIngestionJob
 from payments_pipeline.utils.spark import get_spark_session
+from payments_pipeline.utils.config import PipelineConfig
 
 
 def main():
     """Main entry point"""
     print("🚀 Starting Silver Layer Ingestion")
+    
+    # Initialize configuration
+    config = PipelineConfig()
     
     # Initialize Spark session
     spark = get_spark_session()
@@ -28,8 +32,8 @@ def main():
     
     # Read bronze data
     print("📖 Reading bronze data...")
-    bronze_merchants_df = spark.table("spark_catalog.payments_bronze.merchants_raw")
-    bronze_payments_df = spark.table("spark_catalog.payments_bronze.transactions_raw")
+    bronze_merchants_df = spark.table(f"{config.iceberg_catalog}.{config.bronze_namespace}.merchants_raw")
+    bronze_payments_df = spark.table(f"{config.iceberg_catalog}.{config.bronze_namespace}.transactions_raw")
     
     # Run silver layer pipeline
     print("🔄 Running silver layer pipeline...")
@@ -54,3 +58,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

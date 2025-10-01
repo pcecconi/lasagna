@@ -107,8 +107,8 @@ def setup_silver_layer(config, spark, bronze_job=None):
         
         try:
             # Get bronze data
-            bronze_merchants_df = spark.table('payments_bronze.merchants_raw')
-            bronze_payments_df = spark.table('payments_bronze.transactions_raw')
+            bronze_merchants_df = spark.table(f'{config.iceberg_catalog}.{config.bronze_namespace}.merchants_raw')
+            bronze_payments_df = spark.table(f'{config.iceberg_catalog}.{config.bronze_namespace}.transactions_raw')
             
             # Process merchants
             print("  Processing merchants...")

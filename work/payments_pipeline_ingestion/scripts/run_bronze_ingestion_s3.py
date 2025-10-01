@@ -110,7 +110,7 @@ def main():
         # Validate merchants table
         merchants_validation = {"row_count": 0}
         try:
-            merchants_validation = bronze_job.validate_ingestion("spark_catalog.payments_bronze.merchants_raw")
+            merchants_validation = bronze_job.validate_ingestion(f"{config.iceberg_catalog}.{config.bronze_namespace}.merchants_raw")
             logger.info(f"✅ Merchants: {merchants_validation['row_count']:,} rows")
         except Exception as e:
             logger.error(f"❌ Merchants validation failed: {e}")
@@ -118,23 +118,23 @@ def main():
         # Validate transactions table
         transactions_validation = {"row_count": 0}
         try:
-            transactions_validation = bronze_job.validate_ingestion("spark_catalog.payments_bronze.transactions_raw")
+            transactions_validation = bronze_job.validate_ingestion(f"{config.iceberg_catalog}.{config.bronze_namespace}.transactions_raw")
             logger.info(f"✅ Transactions: {transactions_validation['row_count']:,} rows")
         except Exception as e:
             logger.error(f"❌ Transactions validation failed: {e}")
         
         # Show table information
         logger.info(f"\n📋 Bronze layer tables created:")
-        spark.sql("SHOW TABLES IN spark_catalog.payments_bronze").show()
+        spark.sql(f"SHOW TABLES IN {config.iceberg_catalog}.{config.bronze_namespace}").show()
         
         # Show sample data
         logger.info(f"\n📊 Sample data:")
         try:
             logger.info("Merchants sample:")
-            spark.table("spark_catalog.payments_bronze.merchants_raw").show(3)
+            spark.table(f"{config.iceberg_catalog}.{config.bronze_namespace}.merchants_raw").show(3)
             
             logger.info("Transactions sample:")
-            spark.table("spark_catalog.payments_bronze.transactions_raw").show(3)
+            spark.table(f"{config.iceberg_catalog}.{config.bronze_namespace}.transactions_raw").show(3)
         except Exception as e:
             logger.error(f"❌ Error showing sample data: {e}")
         

@@ -135,7 +135,7 @@ class SilverIngestionJob:
             stats = {}
             
             # Merchants stats
-            merchants_df = self.spark.table("spark_catalog.payments_silver.dim_merchants")
+            merchants_df = self.spark.table(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants")
             stats["merchants"] = {
                 "total_count": merchants_df.count(),
                 "current_count": merchants_df.filter(col("is_current") == True).count(),
@@ -143,7 +143,7 @@ class SilverIngestionJob:
             }
             
             # Payments stats
-            payments_df = self.spark.table("spark_catalog.payments_silver.fact_payments")
+            payments_df = self.spark.table(f"{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments")
             payments_agg = payments_df.agg(
                 spark_count("*").alias("total_count"),
                 spark_max("payment_amount").alias("max_amount"),

@@ -98,8 +98,8 @@ class DataQualityChecker:
     def _check_merchant_completeness(self) -> Dict[str, any]:
         """Check if all bronze merchants appear in silver"""
         try:
-            bronze_merchants = self.spark.table('spark_catalog.payments_bronze.merchants_raw')
-            silver_merchants = self.spark.table('spark_catalog.payments_silver.dim_merchants')
+            bronze_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.bronze_namespace}.merchants_raw')
+            silver_merchants = self.spark.table(f'{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             bronze_merchant_ids = set([row.merchant_id for row in bronze_merchants.select('merchant_id').distinct().collect()])
             silver_merchant_ids = set([row.merchant_id for row in silver_merchants.select('merchant_id').distinct().collect()])
@@ -140,8 +140,8 @@ class DataQualityChecker:
     def _check_transaction_completeness(self) -> Dict[str, any]:
         """Check if all bronze transactions appear in silver"""
         try:
-            bronze_payments = self.spark.table('spark_catalog.payments_bronze.transactions_raw')
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
+            bronze_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             bronze_payment_ids = set([row.payment_id for row in bronze_payments.select('payment_id').distinct().collect()])
             silver_payment_ids = set([row.payment_id for row in silver_payments.select('payment_id').distinct().collect()])
@@ -182,7 +182,7 @@ class DataQualityChecker:
     def _check_referential_integrity(self) -> Dict[str, any]:
         """Check if all payments have merchant_sk"""
         try:
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             payments_without_merchant_sk = silver_payments.filter('merchant_sk IS NULL').count()
             total_payments = silver_payments.count()
@@ -210,8 +210,8 @@ class DataQualityChecker:
     def _check_foreign_key_integrity(self) -> Dict[str, any]:
         """Check if all merchant_sk values exist in dim_merchants"""
         try:
-            silver_merchants = self.spark.table('spark_catalog.payments_silver.dim_merchants')
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
+            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             silver_merchant_sks = set([row.merchant_sk for row in silver_merchants.select('merchant_sk').distinct().collect()])
             payment_merchant_sks = set([row.merchant_sk for row in silver_payments.select('merchant_sk').distinct().collect()])
@@ -242,8 +242,8 @@ class DataQualityChecker:
     def _check_data_consistency(self) -> Dict[str, any]:
         """Check if payment amounts are consistent between bronze and silver"""
         try:
-            bronze_payments = self.spark.table('spark_catalog.payments_bronze.transactions_raw')
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
+            bronze_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.bronze_namespace}.transactions_raw')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
             
             bronze_total_amount = bronze_payments.agg(spark_sum('payment_amount')).collect()[0][0]
             silver_total_amount = silver_payments.agg(spark_sum('payment_amount')).collect()[0][0]
@@ -280,7 +280,7 @@ class DataQualityChecker:
                 merchant_id,
                 COUNT(*) as version_count,
                 SUM(CASE WHEN is_current = true THEN 1 ELSE 0 END) as current_count
-            FROM spark_catalog.payments_silver.dim_merchants
+            FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants
             GROUP BY merchant_id
             HAVING COUNT(*) > 1 OR SUM(CASE WHEN is_current = true THEN 1 ELSE 0 END) != 1
             ''')
@@ -311,7 +311,7 @@ class DataQualityChecker:
         try:
             duplicate_payments = self.spark.sql('''
             SELECT payment_id, COUNT(*) as count
-            FROM spark_catalog.payments_silver.fact_payments
+            FROM {self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments
             GROUP BY payment_id
             HAVING COUNT(*) > 1
             ''')
@@ -340,8 +340,8 @@ class DataQualityChecker:
     def _check_business_rules(self) -> Dict[str, any]:
         """Check business rule validations"""
         try:
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
-            silver_merchants = self.spark.table('spark_catalog.payments_silver.dim_merchants')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             issues = []
             
@@ -388,8 +388,8 @@ class DataQualityChecker:
     def _check_data_types(self) -> Dict[str, any]:
         """Check data type consistency"""
         try:
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
-            silver_merchants = self.spark.table('spark_catalog.payments_silver.dim_merchants')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             # Check for type mismatches
             issues = []
@@ -429,8 +429,8 @@ class DataQualityChecker:
     def _check_null_values(self) -> Dict[str, any]:
         """Check for unexpected null values"""
         try:
-            silver_payments = self.spark.table('spark_catalog.payments_silver.fact_payments')
-            silver_merchants = self.spark.table('spark_catalog.payments_silver.dim_merchants')
+            silver_payments = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.fact_payments')
+            silver_merchants = self.spark.table('{self.config.iceberg_catalog}.{self.config.silver_namespace}.dim_merchants')
             
             issues = []
             
@@ -559,3 +559,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
