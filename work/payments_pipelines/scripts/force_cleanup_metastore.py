@@ -6,7 +6,7 @@ This script directly manipulates the Hive metastore to remove orphaned table ref
 
 import sys
 import os
-sys.path.insert(0, '/usr/local/spark_dev/work/payments_pipeline_ingestion/src')
+sys.path.insert(0, '/usr/local/spark_dev/work/payments_pipelines/src')
 
 import psycopg2
 from payments_pipeline.utils.config import PipelineConfig

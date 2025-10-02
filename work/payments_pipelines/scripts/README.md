@@ -15,7 +15,7 @@ docker compose up -d
 docker exec -it workspace bash
 
 # 3. Navigate to the scripts directory
-cd /usr/local/spark_dev/work/payments_pipeline_ingestion
+cd /usr/local/spark_dev/work/payments_pipelines
 
 # 4. Now you can run any script
 python scripts/setup_payments_databases.py --with-sample-data
@@ -105,7 +105,7 @@ python scripts/run_data_quality.py --format json --output results.json
 ```bash
 # 1. Access the workspace container
 docker exec -it workspace bash
-cd /usr/local/spark_dev/work/payments_pipeline_ingestion
+cd /usr/local/spark_dev/work/payments_pipelines
 
 # 2. Clean up existing databases
 python scripts/cleanup_payments_databases.py --force
@@ -121,7 +121,7 @@ python scripts/run_data_quality.py
 ```bash
 # 1. Access the workspace container
 docker exec -it workspace bash
-cd /usr/local/spark_dev/work/payments_pipeline_ingestion
+cd /usr/local/spark_dev/work/payments_pipelines
 
 # 2. Clean up and recreate
 python scripts/cleanup_payments_databases.py --force
@@ -131,7 +131,7 @@ python scripts/setup_payments_databases.py --with-sample-data
 python scripts/run_data_quality.py
 
 # 4. Generate more data if needed
-cd ../payments_pipeline
+cd ../payments_data_source
 python data_generator.py --days 30
 ```
 
@@ -139,7 +139,7 @@ python data_generator.py --days 30
 ```bash
 # Access the workspace container
 docker exec -it workspace bash
-cd /usr/local/spark_dev/work/payments_pipeline_ingestion
+cd /usr/local/spark_dev/work/payments_pipelines
 
 # Check data quality
 python scripts/run_data_quality.py
@@ -182,7 +182,7 @@ python scripts/setup_payments_databases.py --bronze-only
 
 3. **Navigate to the scripts directory**:
    ```bash
-   cd /usr/local/spark_dev/work/payments_pipeline_ingestion
+   cd /usr/local/spark_dev/work/payments_pipelines
    ```
 
 ### Alternative: Using JupyterLab
@@ -196,7 +196,7 @@ import sys
 # Run a script from within the container
 result = subprocess.run([
     sys.executable, 
-    "/usr/local/spark_dev/work/payments_pipeline_ingestion/scripts/setup_payments_databases.py",
+    "/usr/local/spark_dev/work/payments_pipelines/scripts/setup_payments_databases.py",
     "--with-sample-data"
 ], capture_output=True, text=True)
 

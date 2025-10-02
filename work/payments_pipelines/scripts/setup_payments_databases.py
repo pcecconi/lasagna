@@ -43,7 +43,7 @@ def setup_bronze_layer(config, spark, with_sample_data=False):
         print("📊 Ingesting sample data into Bronze Layer...")
         
         # Check if sample data files exist
-        sample_data_dir = Path("/usr/local/spark_dev/work/payments_pipeline/raw_data")
+        sample_data_dir = Path("/usr/local/spark_dev/work/payments_data_source/raw_data")
         
         if sample_data_dir.exists():
             # Initialize S3 uploader

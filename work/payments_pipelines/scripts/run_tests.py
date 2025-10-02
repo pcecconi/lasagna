@@ -32,7 +32,7 @@ def run_tests(test_type="all", coverage=False, verbose=False, parallel=False):
     
     # Add coverage if requested
     if coverage:
-        cmd.extend(["--cov=payments_pipeline", "--cov-report=html", "--cov-report=term"])
+        cmd.extend(["--cov=payments_data_source", "--cov-report=html", "--cov-report=term"])
     
     # Add verbosity
     if verbose:
@@ -67,14 +67,14 @@ def run_linting():
     print("Running code linting...")
     
     # Run pylint
-    pylint_cmd = ["python", "-m", "pylint", "src/payments_pipeline/"]
+    pylint_cmd = ["python", "-m", "pylint", "src/payments_data_source/"]
     try:
         subprocess.run(pylint_cmd, cwd=Path(__file__).parent.parent)
     except Exception as e:
         print(f"Error running pylint: {e}")
     
     # Run flake8
-    flake8_cmd = ["python", "-m", "flake8", "src/payments_pipeline/"]
+    flake8_cmd = ["python", "-m", "flake8", "src/payments_data_source/"]
     try:
         subprocess.run(flake8_cmd, cwd=Path(__file__).parent.parent)
     except Exception as e:
@@ -86,14 +86,14 @@ def run_formatting():
     print("Running code formatting...")
     
     # Run black
-    black_cmd = ["python", "-m", "black", "src/payments_pipeline/"]
+    black_cmd = ["python", "-m", "black", "src/payments_data_source/"]
     try:
         subprocess.run(black_cmd, cwd=Path(__file__).parent.parent)
     except Exception as e:
         print(f"Error running black: {e}")
     
     # Run isort
-    isort_cmd = ["python", "-m", "isort", "src/payments_pipeline/"]
+    isort_cmd = ["python", "-m", "isort", "src/payments_data_source/"]
     try:
         subprocess.run(isort_cmd, cwd=Path(__file__).parent.parent)
     except Exception as e:

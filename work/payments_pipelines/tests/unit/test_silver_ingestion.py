@@ -19,7 +19,7 @@ class TestSilverIngestionJob:
         mock_logger = Mock()
         
         # Act
-        with patch('payments_pipeline.silver.silver_ingestion.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.silver_ingestion.setup_logging', return_value=mock_logger):
             job = SilverIngestionJob(test_config, mock_spark)
         
         # Assert
@@ -35,7 +35,7 @@ class TestSilverIngestionJob:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.silver_ingestion.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.silver_ingestion.setup_logging', return_value=mock_logger):
             job = SilverIngestionJob(test_config, mock_spark)
             
             # Assert
@@ -51,7 +51,7 @@ class TestSilverIngestionJob:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.silver_ingestion.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.silver_ingestion.setup_logging', return_value=mock_logger):
             job = SilverIngestionJob(test_config, mock_spark)
             
             # Assert

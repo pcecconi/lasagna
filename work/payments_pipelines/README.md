@@ -55,19 +55,19 @@ docker compose up -d
 ```python
 # In JupyterLab notebook
 import sys
-sys.path.append('/usr/local/spark_dev/work/payments_pipeline_ingestion/src')
+sys.path.append('/usr/local/spark_dev/work/payments_pipelines/src')
 
 from payments_pipeline.bronze.ingestion import BronzeIngestionJob
 
 # Initialize and run
 bronze_job = BronzeIngestionJob()
-bronze_job.ingest_batch('/usr/local/spark_dev/work/payments_pipeline/raw_data')
+bronze_job.ingest_batch('/usr/local/spark_dev/work/payments_data_source/raw_data')
 ```
 
 ### **3. Or Use Standalone Script**
 ```bash
 # In container
-python /usr/local/spark_dev/work/payments_pipeline_ingestion/scripts/run_bronze_ingestion.py
+python /usr/local/spark_dev/work/payments_pipelines/scripts/run_bronze_ingestion.py
 ```
 
 ## 🥉 **Bronze Layer Features**

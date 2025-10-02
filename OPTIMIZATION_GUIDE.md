@@ -80,8 +80,8 @@ cp docker-compose.yml docker-compose.yml.backup
 cp docker-compose.optimized.yml docker-compose.yml
 
 # 3. Update Spark utils
-cp work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark_optimized.py \
-   work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark.py
+cp work/payments_pipelines/src/payments_data_source/utils/spark_optimized.py \
+   work/payments_pipelines/src/payments_data_source/utils/spark.py
 
 # 4. Restart containers
 docker compose down

@@ -42,8 +42,8 @@ def restore_original_config():
 
 def update_spark_utils():
     """Update Spark utils to use optimized configuration"""
-    spark_utils_path = Path("work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark.py")
-    spark_optimized_path = Path("work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark_optimized.py")
+    spark_utils_path = Path("work/payments_pipelines/src/payments_pipeline/utils/spark.py")
+    spark_optimized_path = Path("work/payments_pipelines/src/payments_pipeline/utils/spark_optimized.py")
     
     if spark_optimized_path.exists():
         # Backup original
@@ -59,8 +59,8 @@ def update_spark_utils():
 
 def restore_spark_utils():
     """Restore original Spark utils"""
-    spark_utils_path = Path("work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark.py")
-    spark_backup_path = Path("work/payments_pipeline_ingestion/src/payments_pipeline/utils/spark.py.backup")
+    spark_utils_path = Path("work/payments_pipelines/src/payments_pipeline/utils/spark.py")
+    spark_backup_path = Path("work/payments_pipelines/src/payments_pipeline/utils/spark.py.backup")
     
     if spark_backup_path.exists():
         shutil.copy(spark_backup_path, spark_utils_path)

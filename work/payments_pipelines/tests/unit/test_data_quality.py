@@ -18,7 +18,7 @@ class TestDataQualityChecker:
         mock_logger = Mock()
         
         # Act
-        with patch('payments_pipeline.silver.data_quality.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.data_quality.setup_logging', return_value=mock_logger):
             checker = DataQualityChecker(mock_spark)
         
         # Assert
@@ -34,7 +34,7 @@ class TestDataQualityChecker:
         mock_spark.sql.return_value = mock_df
         mock_df.collect.return_value = [(1000, 1000, 0)]  # All checks pass
         
-        with patch('payments_pipeline.silver.data_quality.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.data_quality.setup_logging', return_value=mock_logger):
             checker = DataQualityChecker(mock_spark)
             
             # Act
@@ -51,7 +51,7 @@ class TestDataQualityChecker:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.data_quality.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.data_quality.setup_logging', return_value=mock_logger):
             checker = DataQualityChecker(mock_spark)
             
             # Assert
@@ -71,7 +71,7 @@ class TestDataQualityChecker:
         mock_spark.sql.return_value = mock_df
         mock_df.collect.return_value = [(1000, 1000, 0)]  # All checks pass
         
-        with patch('payments_pipeline.silver.data_quality.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.data_quality.setup_logging', return_value=mock_logger):
             checker = DataQualityChecker(mock_spark)
             
             # Act

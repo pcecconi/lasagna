@@ -28,7 +28,7 @@ def check_container_environment():
 
 def check_raw_data_availability():
     """Check if raw data files are available"""
-    raw_data_path = Path("/usr/local/spark_dev/work/payments_pipeline/raw_data")
+    raw_data_path = Path("/usr/local/spark_dev/work/payments_data_source/raw_data")
     
     if raw_data_path.exists():
         csv_files = list(raw_data_path.glob("*.csv"))

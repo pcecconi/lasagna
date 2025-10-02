@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 # Add the pipeline package to Python path
-sys.path.append('/usr/local/spark_dev/work/payments_pipeline_ingestion/src')
+sys.path.append('/usr/local/spark_dev/work/payments_pipelines/src')
 
 from payments_pipeline.bronze.ingestion import BronzeIngestionJob
 from payments_pipeline.utils.config import PipelineConfig
@@ -37,7 +37,7 @@ def main():
         bronze_job = BronzeIngestionJob(config)
         
         # Set data directory
-        data_dir = "/usr/local/spark_dev/work/payments_pipeline/raw_data"
+        data_dir = "/usr/local/spark_dev/work/payments_data_source/raw_data"
         
         if not os.path.exists(data_dir):
             print(f"❌ Data directory not found: {data_dir}")

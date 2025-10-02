@@ -18,7 +18,7 @@ class TestAtomicSilverUpdater:
         mock_logger = Mock()
         
         # Act
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Assert
@@ -32,7 +32,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Act
@@ -49,7 +49,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Act
@@ -74,7 +74,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Act
@@ -98,7 +98,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Act
@@ -127,7 +127,7 @@ class TestAtomicSilverUpdater:
         mock_df.filter.return_value = mock_df
         mock_df.count.return_value = 0  # No missing merchants
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Act
@@ -144,7 +144,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Assert
@@ -157,7 +157,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Assert
@@ -170,7 +170,7 @@ class TestAtomicSilverUpdater:
         mock_spark = Mock()
         mock_logger = Mock()
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger):
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger):
             updater = AtomicSilverUpdater(test_config, mock_spark)
         
         # Assert
@@ -186,8 +186,8 @@ class TestAtomicSilverUpdater:
         mock_df.count.return_value = 100  # Simulate validation errors
         mock_df.filter.return_value = mock_df
         
-        with patch('payments_pipeline.silver.atomic_updates.setup_logging', return_value=mock_logger), \
-             patch('payments_pipeline.silver.atomic_updates.col') as mock_col:
+        with patch('payments_data_source.silver.atomic_updates.setup_logging', return_value=mock_logger), \
+             patch('payments_data_source.silver.atomic_updates.col') as mock_col:
             mock_col.return_value.isNull.return_value = Mock()
             mock_col.return_value.__lt__ = Mock()
             mock_col.return_value.__gt__ = Mock()
