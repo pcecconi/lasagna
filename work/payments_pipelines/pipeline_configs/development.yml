@@ -47,8 +47,9 @@ pipeline_groups:
           catalog: "iceberg"
           source_config:
             base_path: "/usr/local/spark_dev/work/payments_data_source/raw_data"
-            file_pattern: "merchants_*.csv"
+            file_pattern: "merchants_"
           s3_status_prefix: "s3a://warehouse/pipeline_status/"
+          s3_data_prefix: "s3a://warehouse/payments/"
           quality_checks: ["required_columns", "null_values"]  # Removed duplicates - overlapping merchant data is expected
           batch_size: 1000
           enable_debug_logging: true

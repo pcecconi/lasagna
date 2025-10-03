@@ -25,6 +25,7 @@ from ..common.data_quality import (
     RangeCheck
 )
 from ..common.schema_manager import SchemaManager
+from ..common.input_manager import InputManager
 
 
 class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementMixin, DataQualityMixin):
@@ -60,10 +61,18 @@ class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementM
         # Source configuration
         self.source_config = self.config.get("source_config", {})
         self.base_path = self.source_config.get("base_path", "/opt/workspace/work/payments_data_source/raw_data")
-        self.file_pattern = self.source_config.get("file_pattern", "merchants_*.csv")
+        self.file_pattern = self.source_config.get("file_pattern", "merchants_")
         
-        # S3 marker configuration for tracking uploaded and processed files
+        # S3 configuration for file management
         self.s3_status_prefix = self.config.get("s3_status_prefix", "s3a://warehouse/pipeline_status/")
+        self.s3_data_prefix = self.config.get("s3_data_prefix", "s3a://warehouse/payments/")
+        
+        # Initialize InputManager for file handling
+        self.input_manager = InputManager(
+            spark_session=spark_session,
+            s3_status_prefix=self.s3_status_prefix,
+            pipeline_name=self.pipeline_name
+        )
         
         self.logger.info(f"🚀 Initialized MerchantsBronzePipeline for table: {self.full_table_name}")
     
@@ -126,19 +135,13 @@ class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementM
                     self.logger.error(f"Missing required configuration: {config_key}")
                     return False
             
-            # Check source path exists
-            source_path = Path(self.base_path)
-            if not source_path.exists():
-                self.logger.error(f"Source path does not exist: {source_path}")
+            # Check for uploaded merchant files using InputManager
+            uploaded_files = self.input_manager.get_uploaded_files(self.file_pattern)
+            if not uploaded_files:
+                self.logger.error(f"No uploaded merchant files found matching pattern: {self.file_pattern}")
                 return False
             
-            # Check for merchant files
-            merchant_files = list(source_path.glob(self.file_pattern))
-            if not merchant_files:
-                self.logger.error(f"No merchant files found matching pattern: {self.file_pattern}")
-                return False
-            
-            self.logger.info(f"✅ Found {len(merchant_files)} merchant files")
+            self.logger.info(f"✅ Found {len(uploaded_files)} merchant files")
             return True
             
         except Exception as e:
@@ -150,36 +153,65 @@ class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementM
         try:
             self.logger.info("📥 Loading merchant data from S3 files...")
             
-            # Find files that need processing (uploaded but not processed)
-            s3_files_to_process = self._get_s3_files_to_process()
-            if not s3_files_to_process:
+            # Process files one by one for better scalability
+            all_dataframes = []
+            processed_filenames = []
+            
+            csv_options = {
+                "header": "true",
+                "inferSchema": "true"  # Let Spark infer the schema from headers
+            }
+            
+            # Process files one at a time using the new scalable approach
+            while True:
+                s3_file = self.input_manager.get_next_file_to_process(
+                    file_pattern=self.file_pattern,
+                    s3_data_prefix=self.s3_data_prefix
+                )
+                
+                if s3_file is None:
+                    break
+                
+                self.logger.info(f"📄 Processing file: {s3_file}")
+                
+                # Load single file using InputManager
+                file_df = self.input_manager.load_data_from_file(
+                    s3_file=s3_file,
+                    file_format="csv",
+                    options=csv_options
+                )
+                
+                # Basic data cleaning
+                file_df = file_df.filter(col("merchant_id").isNotNull())
+                
+                # Add bronze layer metadata (same as legacy pipeline)
+                from pyspark.sql.functions import current_timestamp, lit
+                file_df = file_df.withColumn("ingestion_timestamp", current_timestamp()) \
+                               .withColumn("bronze_layer_version", lit("1.0")) \
+                               .withColumn("data_source", lit("payments_generator"))
+                
+                # Count rows for this specific file to create accurate processing marker
+                file_row_count = file_df.count()
+                filename = s3_file.split('/')[-1]
+                
+                all_dataframes.append(file_df)
+                processed_filenames.append(filename)
+                
+                # Mark file as processed immediately to prevent infinite loop
+                self.input_manager.mark_files_as_processed([filename], [file_row_count])
+                self.logger.info(f"✅ Marked {filename} as processed ({file_row_count} rows)")
+            
+            if not all_dataframes:
                 self.logger.info("ℹ️ No new files to process")
                 return None, []
             
-            self.logger.info(f"📄 Processing {len(s3_files_to_process)} files from S3")
+            self.logger.info(f"📄 Processed {len(all_dataframes)} files from S3")
             
-            # Extract filenames from S3 paths for processing markers
-            processed_filenames = [path.split('/')[-1] for path in s3_files_to_process]
-            
-            # Define merchant schema
-            merchant_schema = self.schema_manager.create_merchants_schema()
-            
-            # Read CSV files from S3
-            merchants_df = self.spark.read \
-                .option("header", "true") \
-                .option("inferSchema", "false") \
-                .schema(merchant_schema) \
-                .csv(s3_files_to_process)  # Pass list of S3 paths
-            
-            # Basic data cleaning
-            merchants_df = merchants_df.filter(col("merchant_id").isNotNull())
-            
-            # Add bronze layer metadata (same as legacy pipeline)
-            from pyspark.sql.functions import current_timestamp, input_file_name, lit
-            merchants_df = merchants_df.withColumn("ingestion_timestamp", current_timestamp()) \
-                                     .withColumn("source_file", input_file_name()) \
-                                     .withColumn("bronze_layer_version", lit("1.0")) \
-                                     .withColumn("data_source", lit("payments_generator"))
+            # Union all dataframes (this is still needed for the current pipeline design)
+            # but now each file is processed individually, making it more scalable
+            merchants_df = all_dataframes[0]
+            for i in range(1, len(all_dataframes)):
+                merchants_df = merchants_df.union(all_dataframes[i])
             
             row_count = merchants_df.count()
             self.logger.info(f"✅ Loaded {row_count} merchant records from S3")
@@ -190,95 +222,6 @@ class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementM
         except Exception as e:
             self.logger.error(f"❌ Failed to load merchant data from S3: {e}")
             return None, []
-    
-    def _get_s3_files_to_process(self) -> List[str]:
-        """Get list of S3 files that have been uploaded but not yet processed"""
-        try:
-            # Get all uploaded files from S3 markers
-            uploaded_files = self._get_uploaded_files()
-            
-            s3_files_to_process = []
-            for filename in uploaded_files:
-                # Check if file was already processed (has processing marker)
-                if not self._has_processing_marker(filename):
-                    # Construct S3 path for the file
-                    s3_path = f"s3a://warehouse/payments/{filename}"
-                    s3_files_to_process.append(s3_path)
-            
-            return s3_files_to_process
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to get S3 files to process: {e}")
-            return []
-    
-    def _get_uploaded_files(self) -> List[str]:
-        """Get list of files that have been uploaded (have upload markers)"""
-        try:
-            # List all upload markers in S3
-            markers_path = f"{self.s3_status_prefix}*.uploaded"
-            
-            # Try to read marker files
-            try:
-                marker_df = self.spark.read.format("json").load(markers_path)
-                if marker_df.count() > 0:
-                    # Extract filenames from markers
-                    filenames = [row.filename for row in marker_df.select("filename").collect()]
-                    # Filter for merchant files only
-                    merchant_files = [f for f in filenames if f.startswith("merchants_") and f.endswith(".csv")]
-                    return merchant_files
-                else:
-                    return []
-            except Exception:
-                return []
-                
-        except Exception as e:
-            self.logger.error(f"❌ Failed to get uploaded files: {e}")
-            return []
-    
-    def _has_upload_marker(self, filename: str) -> bool:
-        """Check if file has an upload marker in S3"""
-        try:
-            marker_path = f"{self.s3_status_prefix}{filename}.uploaded"
-            marker_df = self.spark.read.format("json").load(marker_path)
-            return marker_df.count() > 0
-        except Exception:
-            return False
-    
-    def _has_processing_marker(self, filename: str) -> bool:
-        """Check if file has a processing marker in S3"""
-        try:
-            marker_path = f"{self.s3_status_prefix}{filename}.processed"
-            marker_df = self.spark.read.format("json").load(marker_path)
-            count = marker_df.count()
-            return count > 0
-        except Exception:
-            return False
-    
-    def _create_processing_marker(self, filename: str, row_count: int):
-        """Create a processing marker file in S3"""
-        try:
-            from datetime import datetime
-            import json
-            
-            marker_data = {
-                "filename": filename,
-                "processed_at": datetime.now().isoformat(),
-                "rows_processed": row_count,
-                "status": "processed",
-                "pipeline": self.pipeline_name
-            }
-            
-            # Create marker file in S3
-            marker_path = f"{self.s3_status_prefix}{filename}.processed"
-            
-            # Use Spark to write the marker file
-            marker_df = self.spark.createDataFrame([marker_data])
-            marker_df.coalesce(1).write.mode("overwrite").format("json").save(marker_path)
-            
-            self.logger.debug(f"Created processing marker: {marker_path}")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to create processing marker for {filename}: {e}")
     
     def _run_data_quality_checks(self, df: DataFrame) -> bool:
         """Run comprehensive data quality checks"""
@@ -377,14 +320,9 @@ class MerchantsBronzePipeline(BasePipeline, DataIngestionMixin, TableManagementM
                 .mode("append") \
                 .saveAsTable(self.full_table_name)
             
-            # Get row count for processing markers
-            row_count = df.count()
-            
-            # Create processing markers ONLY for files that were actually processed in this run
-            for filename in processed_files:
-                if not self._has_processing_marker(filename):
-                    self._create_processing_marker(filename, row_count)
-                    self.logger.info(f"📄 Created processing marker for {filename}")
+            # Note: Processing markers are now created in the _load_merchant_data loop
+            # to prevent infinite loops, so no need to create them here
+            self.logger.info(f"✅ Successfully wrote data from {len(processed_files)} files to table")
             
             self.logger.info("✅ Merchant data written successfully")
             
