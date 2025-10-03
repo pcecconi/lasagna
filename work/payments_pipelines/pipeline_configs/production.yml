@@ -1,0 +1,103 @@
+version: "1.0"
+description: "Payments Pipeline Configuration - Production Environment"
+
+pipeline_groups:
+  bronze_layer:
+    description: "Bronze layer ingestion pipelines"
+    enabled: true
+    pipelines:
+      bronze_merchants:
+        class_name: "BronzeMerchantsPipeline"
+        config:
+          table_name: "merchants_raw"
+          namespace: "payments_bronze"
+          source_config:
+            base_path: "s3://production-data-bucket/raw/merchants"
+            file_pattern: "merchants_*.csv"
+          quality_checks: ["required_columns", "null_values", "duplicates", "mdr_rate_validation"]
+          batch_size: 50000
+          enable_debug_logging: false
+          compression: "gzip"
+          max_retries: 3
+        enabled: true
+        description: "Ingest raw merchant data with quality validation"
+      
+      bronze_transactions:
+        class_name: "BronzeTransactionsPipeline"
+        config:
+          table_name: "transactions_raw"
+          namespace: "payments_bronze"
+          source_config:
+            base_path: "s3://production-data-bucket/raw/transactions"
+            file_pattern: "transactions_*.csv"
+          quality_checks: ["required_columns", "null_values", "duplicates", "amount_validation", "status_validation"]
+          batch_size: 100000
+          enable_debug_logging: false
+          compression: "snappy"
+          max_retries: 3
+          enable_metrics_collection: true
+        enabled: true
+        description: "Ingest raw transaction data with quality validation"
+
+  silver_layer:
+    description: "Silver layer transformation pipelines"
+    enabled: true
+    pipelines:
+      silver_merchants:
+        class_name: "SilverMerchantsPipeline"
+        dependencies: ["bronze_merchants"]
+        config:
+          table_name: "dim_merchants"
+          namespace: "payments_silver"
+          scd_type: 2
+          business_key: "merchant_id"
+          quality_checks: ["required_columns", "null_values", "scd_validation"]
+          enable_incremental_processing: true
+          max_parallelism: 16
+          enable_auto_compaction: true
+          monitoring_alerts: true
+        enabled: true
+        description: "Transform merchants data with SCD Type 2 logic"
+      
+      silver_transactions:
+        class_name: "SilverTransactionsPipeline"
+        dependencies: ["bronze_transactions", "silver_merchants"]
+        config:
+          table_name: "fact_payments"
+          namespace: "payments_silver"
+          quality_checks: ["required_columns", "null_values", "amount_validation", "merchant_lookup"]
+          enable_incremental_processing: true
+          max_parallelism: 32
+          cache_intermediate_results: true
+          enable_auto_compaction: true
+          monitoring_alerts: true
+          data_retention_days: 2555  # 7 years
+        enabled: true
+        description: "Transform transaction data into fact table with merchant lookup"
+
+global_config:
+  spark_config:
+    app_name: "PaymentsPipeline-Prod"
+    master: "spark://spark-master:7077"
+    executor_memory: "8g"
+    driver_memory: "4g"
+    executor_cores: 4
+  
+  iceberg_config:
+    catalog: "iceberg"
+    uri: "thrift://hive-metastore:9083"
+    warehouse_dir: "s3://production-warehouse/"
+  
+  quality_config:
+    enabled: true
+    fail_on_error: true  # Strict in production
+    generate_reports: true
+    output_dir: "s3://production-warehouse/quality_reports"
+    alert_on_failures: true
+  
+  processing_config:
+    batch_size: 100000
+    max_file_age_days: 7
+    enable_incremental: true
+    log_level: "INFO"
+    enable_metrics: true

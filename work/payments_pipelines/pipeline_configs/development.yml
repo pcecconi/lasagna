@@ -1,0 +1,126 @@
+version: "1.0"
+description: "Payments Pipeline Configuration - Development Environment"
+
+pipeline_groups:
+  # CSV Upload Pipeline - handles file upload and state management
+  csv_upload:
+    description: "CSV file upload and state management"
+    enabled: true
+    pipelines:
+      csv_uploader:
+        class_name: "CSVUploaderPipeline"
+        config:
+          source_config:
+            base_path: "/usr/local/spark_dev/work/payments_data_source/raw_data"
+            file_patterns: ["merchants_*.csv", "transactions_*.csv"]
+          s3_status_prefix: "s3a://warehouse/pipeline_status/"
+          cleanup_after_upload: false  # Keep files in S3 for downstream processing
+          keep_days: 7  # Keep files for 7 days for processing
+          enable_debug_logging: true
+        enabled: true
+        description: "Upload CSV files to S3/MinIO with state management"
+  
+  bronze_layer:
+    description: "Bronze layer ingestion pipelines"
+    enabled: true
+    pipelines:
+      bronze_merchants:
+        class_name: "BronzeMerchantsPipeline"
+        config:
+          table_name: "merchants_raw"
+          namespace: "payments_bronze"
+          catalog: "iceberg"
+          source_config:
+            base_path: "/usr/local/spark_dev/work/payments_data_source/raw_data"
+            file_pattern: "merchants_*.csv"
+          quality_checks: ["required_columns", "null_values", "duplicates", "mdr_rate_validation"]
+          batch_size: 1000
+          enable_debug_logging: true
+      
+      # New modular merchants pipeline (independent from legacy)
+      modular_merchants_bronze:
+        class_name: "MerchantsBronzePipeline"
+        dependencies: ["csv_uploader"]  # Depends on CSV upload pipeline
+        config:
+          table_name: "merchants"  # Main merchants table
+          database: "payments_bronze"
+          catalog: "iceberg"
+          source_config:
+            base_path: "/usr/local/spark_dev/work/payments_data_source/raw_data"
+            file_pattern: "merchants_*.csv"
+          s3_status_prefix: "s3a://warehouse/pipeline_status/"
+          quality_checks: ["required_columns", "null_values"]  # Removed duplicates - overlapping merchant data is expected
+          batch_size: 1000
+          enable_debug_logging: true
+        enabled: true
+        description: "Ingest raw merchant data with quality validation (depends on CSV upload)"
+      
+      bronze_transactions:
+        class_name: "BronzeTransactionsPipeline"
+        config:
+          table_name: "transactions_raw"
+          namespace: "payments_bronze"
+          catalog: "iceberg"
+          source_config:
+            base_path: "/usr/local/spark_dev/work/payments_data_source/raw_data"
+            file_pattern: "transactions_*.csv"
+          quality_checks: ["required_columns", "null_values", "duplicates", "amount_validation", "status_validation"]
+          batch_size: 5000
+          enable_debug_logging: true
+        enabled: true
+        description: "Ingest raw transaction data with quality validation"
+
+  silver_layer:
+    description: "Silver layer transformation pipelines"
+    enabled: true
+    pipelines:
+      silver_merchants:
+        class_name: "SilverMerchantsPipeline"
+        dependencies: ["bronze_merchants"]
+        config:
+          table_name: "dim_merchants"
+          namespace: "payments_silver"
+          scd_type: 2
+          business_key: "merchant_id"
+          quality_checks: ["required_columns", "null_values", "scd_validation"]
+          enable_incremental_processing: false
+          max_parallelism: 4
+        enabled: true
+        description: "Transform merchants data with SCD Type 2 logic"
+      
+      silver_transactions:
+        class_name: "SilverTransactionsPipeline"
+        dependencies: ["bronze_transactions", "silver_merchants"]
+        config:
+          table_name: "fact_payments"
+          namespace: "payments_silver"
+          quality_checks: ["required_columns", "null_values", "amount_validation", "merchant_lookup"]
+          enable_incremental_processing: true
+          max_parallelism: 8
+          cache_intermediate_results: true
+        enabled: true
+        description: "Transform transaction data into fact table with merchant lookup"
+
+global_config:
+  spark_config:
+    app_name: "PaymentsPipeline-Dev"
+    master: "spark://spark-master:7077"
+    executor_memory: "2g"
+    driver_memory: "1g"
+  
+  iceberg_config:
+    catalog: "iceberg"
+    uri: "thrift://hive-metastore:9083"
+    warehouse_dir: "s3a://warehouse/"
+  
+  quality_config:
+    enabled: true
+    fail_on_error: false  # More lenient in dev
+    generate_reports: true
+    output_dir: "quality_reports"
+  
+  processing_config:
+    batch_size: 10000
+    max_file_age_days: 30
+    enable_incremental: true
+    log_level: "DEBUG"

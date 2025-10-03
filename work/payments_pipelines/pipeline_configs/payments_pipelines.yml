@@ -1,0 +1,86 @@
+version: "1.0"
+description: "Payments Pipeline Configuration - Modular Architecture"
+
+pipeline_groups:
+  bronze_layer:
+    description: "Bronze layer ingestion pipelines"
+    enabled: true
+    pipelines:
+      bronze_merchants:
+        class_name: "BronzeMerchantsPipeline"
+        config:
+          table_name: "merchants_raw"
+          namespace: "payments_bronze"
+          quality_checks: ["required_columns", "null_values", "duplicates", "mdr_rate_validation"]
+        enabled: true
+        description: "Ingest raw merchant data with quality validation"
+      
+      bronze_transactions:
+        class_name: "BronzeTransactionsPipeline"
+        config:
+          table_name: "transactions_raw"
+          namespace: "payments_bronze"
+          quality_checks: ["required_columns", "null_values", "duplicates", "amount_validation", "status_validation"]
+        enabled: true
+        description: "Ingest raw transaction data with quality validation"
+
+  silver_layer:
+    description: "Silver layer transformation pipelines"
+    enabled: true
+    pipelines:
+      silver_merchants:
+        class_name: "SilverMerchantsPipeline"
+        dependencies: ["bronze_merchants"]
+        config:
+          table_name: "dim_merchants"
+          namespace: "payments_silver"
+          scd_type: 2
+          business_key: "merchant_id"
+          quality_checks: ["required_columns", "null_values", "scd_validation"]
+        enabled: true
+        description: "Transform merchants data with SCD Type 2 logic"
+      
+      silver_transactions:
+        class_name: "SilverTransactionsPipeline"
+        dependencies: ["bronze_transactions", "silver_merchants"]
+        config:
+          table_name: "fact_payments"
+          namespace: "payments_silver"
+          quality_checks: ["required_columns", "null_values", "amount_validation", "merchant_lookup"]
+        enabled: true
+        description: "Transform transaction data into fact table with merchant lookup"
+
+  gold_layer:
+    description: "Gold layer analytics pipelines"
+    enabled: false  # Disabled by default
+    pipelines:
+      gold_merchant_analytics:
+        class_name: "GoldMerchantAnalyticsPipeline"
+        dependencies: ["silver_merchants", "silver_transactions"]
+        config:
+          table_name: "merchant_analytics"
+          namespace: "payments_gold"
+          aggregation_level: "daily"
+        enabled: false
+        description: "Create merchant analytics aggregations"
+
+global_config:
+  spark_config:
+    app_name: "PaymentsPipeline"
+    master: "spark://spark-master:7077"
+  
+  iceberg_config:
+    catalog: "iceberg"
+    uri: "thrift://hive-metastore:9083"
+    warehouse_dir: "s3a://warehouse/"
+  
+  quality_config:
+    enabled: true
+    fail_on_error: true
+    generate_reports: true
+    output_dir: "quality_reports"
+  
+  processing_config:
+    batch_size: 10000
+    max_file_age_days: 30
+    enable_incremental: true
